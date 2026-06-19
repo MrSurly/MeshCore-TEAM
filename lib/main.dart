@@ -32,6 +32,10 @@ import 'services/telemetry_send_service.dart';
 import 'services/forwarding_policy_service.dart';
 import 'services/contact_capability_service.dart';
 import 'services/capability_publisher.dart';
+import 'services/user_location_service.dart';
+import 'services/location_debug_override.dart';
+import 'services/debug_inject_service.dart';
+import 'package:latlong2/latlong.dart';
 import 'screens/main_navigation_screen.dart';
 import 'screens/direct_message_screen.dart';
 import 'screens/channel_chat_screen.dart';
@@ -241,6 +245,44 @@ Future<void> _runAppStartup() async {
       channelsDao: database.channelsDao,
     )..start();
 
+    final locationDebugOverride =
+        kDebugMode ? LocationDebugOverride() : null;
+
+    final userLocationService = UserLocationService(
+      settingsService: settingsService,
+      connectionVM: connectionViewModel,
+      debugOverride: locationDebugOverride,
+    );
+
+    final debugInjectService = (kDebugMode && locationDebugOverride != null)
+        ? DebugInjectService()
+        : null;
+
+    if (debugInjectService != null && locationDebugOverride != null) {
+      debugInjectService.registerHandler('gps', (payload) {
+        final lat = (payload['lat'] as num?)?.toDouble();
+        final lon = (payload['lon'] as num?)?.toDouble();
+        locationDebugOverride.phone.update(
+          enabled: true,
+          hasFix: (payload['hasFix'] as bool?) ?? true,
+          position: (lat != null && lon != null) ? LatLng(lat, lon) : null,
+          speedMps: (payload['speed'] as num?)?.toDouble(),
+          headingDegrees: (payload['heading'] as num?)?.toDouble(),
+        );
+      });
+
+      debugInjectService.registerHandler('gps_companion', (payload) {
+        final lat = (payload['lat'] as num?)?.toDouble();
+        final lon = (payload['lon'] as num?)?.toDouble();
+        locationDebugOverride.companion.update(
+          enabled: true,
+          hasFix: (payload['hasFix'] as bool?) ?? true,
+          position: (lat != null && lon != null) ? LatLng(lat, lon) : null,
+        );
+      });
+      await debugInjectService.start();
+    }
+
     // Startup reconnect behavior:
     // - Android: native foreground service owns BLE and reconnection.
     // - Others: keep existing Dart-based auto-reconnect.
@@ -277,6 +319,9 @@ Future<void> _runAppStartup() async {
       forwardingPolicyService: forwardingPolicyService,
       contactCapabilityService: contactCapabilityService,
       capabilityPublisher: capabilityPublisher,
+      userLocationService: userLocationService,
+      locationDebugOverride: locationDebugOverride,
+      debugInjectService: debugInjectService,
     ));
     print('✅ App launched');
   } catch (e, stackTrace) {
@@ -370,6 +415,9 @@ class TeamFlutterApp extends StatelessWidget {
   final ForwardingPolicyService forwardingPolicyService;
   final ContactCapabilityService contactCapabilityService;
   final CapabilityPublisher capabilityPublisher;
+  final UserLocationService userLocationService;
+  final LocationDebugOverride? locationDebugOverride;
+  final DebugInjectService? debugInjectService;
 
   const TeamFlutterApp({
     super.key,
@@ -388,6 +436,9 @@ class TeamFlutterApp extends StatelessWidget {
     required this.forwardingPolicyService,
     required this.contactCapabilityService,
     required this.capabilityPublisher,
+    required this.userLocationService,
+    this.locationDebugOverride,
+    this.debugInjectService,
   });
 
   @override
@@ -440,6 +491,13 @@ class TeamFlutterApp extends StatelessWidget {
 
         // Capability publisher (sends #CAP: on discovery and settings change)
         Provider<CapabilityPublisher>.value(value: capabilityPublisher),
+
+        // Unified GPS source (companion radio or phone)
+        ChangeNotifierProvider<UserLocationService>.value(value: userLocationService),
+
+        if (locationDebugOverride != null)
+          ChangeNotifierProvider<LocationDebugOverride>.value(
+              value: locationDebugOverride!),
       ],
       child: MaterialApp(
         navigatorKey: navigatorKey,

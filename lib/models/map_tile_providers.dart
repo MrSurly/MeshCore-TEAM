@@ -12,12 +12,14 @@ class MapTileProviderOption {
   final String label;
   final String urlTemplate;
   final List<String> subdomains;
+  final int maxZoom;
 
   const MapTileProviderOption({
     required this.id,
     required this.label,
     required this.urlTemplate,
     this.subdomains = const <String>[],
+    required this.maxZoom,
   });
 }
 
@@ -26,36 +28,42 @@ const List<MapTileProviderOption> kMapTileProviderOptions = [
     id: MapProvider.mapnik,
     label: 'OpenStreetMap',
     urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    maxZoom: 19,
   ),
   MapTileProviderOption(
     id: MapProvider.topo,
     label: 'OpenTopoMap',
     urlTemplate: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
     subdomains: ['a', 'b', 'c'],
+    maxZoom: 17,
   ),
   MapTileProviderOption(
     id: MapProvider.usgsSat,
     label: 'USGS Satellite',
     urlTemplate:
         'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}',
+    maxZoom: 16,
   ),
   MapTileProviderOption(
     id: MapProvider.usgsTopo,
     label: 'USGS Topographic',
     urlTemplate:
         'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}',
+    maxZoom: 16,
   ),
   MapTileProviderOption(
     id: MapProvider.hot,
     label: 'Humanitarian',
     urlTemplate: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
     subdomains: ['a', 'b', 'c'],
+    maxZoom: 18,
   ),
   MapTileProviderOption(
     id: MapProvider.esriSat,
     label: 'ESRI Satellite',
     urlTemplate:
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    maxZoom: 20,
   ),
   MapTileProviderOption(
     id: MapProvider.carto,
@@ -63,6 +71,7 @@ const List<MapTileProviderOption> kMapTileProviderOptions = [
     urlTemplate:
         'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
     subdomains: ['a', 'b', 'c', 'd'],
+    maxZoom: 19,
   ),
 ];
 

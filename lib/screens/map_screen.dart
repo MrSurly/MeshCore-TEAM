@@ -29,6 +29,7 @@ import 'package:meshcore_team/services/forwarding_policy_service.dart';
 import 'package:meshcore_team/services/kmz_import_service.dart';
 import 'package:meshcore_team/services/map_tile_cache_service.dart';
 import 'package:meshcore_team/services/settings_service.dart';
+import 'package:meshcore_team/services/user_location_service.dart';
 import 'package:meshcore_team/viewmodels/connection_viewmodel.dart';
 import 'package:meshcore_team/widgets/offline_map_download_dialog.dart';
 import 'package:meshcore_team/widgets/waypoint_create_dialog.dart';
@@ -55,13 +56,11 @@ class _MapScreenState extends State<MapScreen> {
   bool _isMovingForTrackUp = false;
   LatLng? _lastCourseLocation;
   DateTime? _lastCourseTime;
+  double? _smoothedSpeed;
+  String _debugSpeed = '?'; // temp: last received speed for display
 
-  StreamSubscription<Position>? _positionSub;
   StreamSubscription<CompassXEvent>? _compassSub;
-  Timer? _companionTelemetryTimer;
   Timer? _contactMarkerRefreshTimer;
-  Timer? _phoneLocationPollingTimer;
-  bool? _lastShouldUseCompanion;
 
   bool _isFollowingUser = false;
   bool _isHeadingUp = false;
@@ -1216,9 +1215,9 @@ class _MapScreenState extends State<MapScreen> {
     // Apply location/track-up policy after first build when providers exist.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final settingsService = context.read<SettingsService>();
-      final connectionVM = context.read<ConnectionViewModel>();
-      _applyLocationPolicy(settingsService, connectionVM);
+      final locationService = context.read<UserLocationService>();
+      locationService.addListener(_onLocationUpdate);
+      locationService.applyPolicy();
 
       // Subscribe to imported KMZ overlay maps
       final db = context.read<AppDatabase>();
@@ -1238,81 +1237,35 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   void dispose() {
-    _positionSub?.cancel();
-    _positionSub = null;
+    context.read<UserLocationService>().removeListener(_onLocationUpdate);
     _compassSub?.cancel();
     _compassSub = null;
-    _companionTelemetryTimer?.cancel();
-    _companionTelemetryTimer = null;
     _contactMarkerRefreshTimer?.cancel();
     _contactMarkerRefreshTimer = null;
-    _phoneLocationPollingTimer?.cancel();
-    _phoneLocationPollingTimer = null;
     _overlayMapsSub?.cancel();
     _overlayMapsSub = null;
     super.dispose();
   }
 
-  void _startPhoneLocationTracking() {
-    if (!Platform.isAndroid && !Platform.isIOS) return;
-    _positionSub?.cancel();
-    _phoneLocationPollingTimer?.cancel();
-
-    // Seed with one current position ASAP.
-    _getCurrentLocation();
-
-    const settings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 0,
+  void _onLocationUpdate() {
+    final fix = context.read<UserLocationService>().latestFix;
+    if (fix == null) return;
+    _handleNewLocation(
+      fix.position,
+      timestamp: fix.timestamp,
+      speedMps: fix.speedMps,
     );
-
-    _positionSub = Geolocator.getPositionStream(locationSettings: settings)
-        .listen((position) {
-      _handleNewLocation(
-        LatLng(position.latitude, position.longitude),
-        timestamp: DateTime.now(),
-        speedMps: position.speed.isFinite ? position.speed : null,
-        headingDegrees: (position.heading.isFinite && position.heading >= 0)
-            ? position.heading
-            : null,
-      );
-    }, onError: (Object error) {
+    final locationService = context.read<UserLocationService>();
+    if (_locationError != locationService.locationError) {
       setState(() {
-        _locationError = 'Location stream error: $error';
+        _locationError = locationService.locationError;
       });
-    });
-
-    // Periodic polling as a safety net: guarantees at least one update every
-    // 2 seconds even when the OS throttles the position stream (e.g. Android
-    // Fused Location Provider batching with the native telemetry service).
-    _phoneLocationPollingTimer =
-        Timer.periodic(const Duration(seconds: 2), (_) async {
-      if (!mounted) return;
-      try {
-        final position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-          timeLimit: const Duration(seconds: 3),
-        );
-        if (!mounted) return;
-        _handleNewLocation(
-          LatLng(position.latitude, position.longitude),
-          timestamp: DateTime.now(),
-          speedMps: position.speed.isFinite ? position.speed : null,
-          headingDegrees: (position.heading.isFinite && position.heading >= 0)
-              ? position.heading
-              : null,
-        );
-      } catch (_) {
-        // Polling is best-effort; stream is primary.
-      }
-    });
-  }
-
-  void _stopPhoneLocationTracking() {
-    _positionSub?.cancel();
-    _positionSub = null;
-    _phoneLocationPollingTimer?.cancel();
-    _phoneLocationPollingTimer = null;
+    }
+    if (_isLoadingLocation != locationService.isLoadingLocation) {
+      setState(() {
+        _isLoadingLocation = locationService.isLoadingLocation;
+      });
+    }
   }
 
   void _startCompassTracking() {
@@ -1342,86 +1295,6 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
-  void _applyLocationPolicy(
-    SettingsService settingsService,
-    ConnectionViewModel connectionVM,
-  ) {
-    final wantsCompanion =
-        settingsService.settings.locationSource == LocationSource.companion;
-
-    final companionFixTime = connectionVM.companionGpsFixTime;
-    final hasRecentCompanionFix = connectionVM.hasCompanionGpsFix &&
-        companionFixTime != null &&
-        DateTime.now().difference(companionFixTime) <
-            const Duration(seconds: 10);
-
-    final shouldPollCompanionTelemetry =
-        wantsCompanion && connectionVM.isConnected;
-    if (shouldPollCompanionTelemetry && _companionTelemetryTimer == null) {
-      _companionTelemetryTimer =
-          Timer.periodic(const Duration(seconds: 2), (_) async {
-        if (!mounted) return;
-        final vm = context.read<ConnectionViewModel>();
-        // Only send the request. Policy is re-evaluated reactively via
-        // ConnectionViewModel.notifyListeners() → build → postFrameCallback.
-        await vm.requestCompanionTelemetry();
-      });
-
-      // Fire one request immediately.
-      connectionVM.requestCompanionTelemetry();
-    } else if (!shouldPollCompanionTelemetry &&
-        _companionTelemetryTimer != null) {
-      _companionTelemetryTimer?.cancel();
-      _companionTelemetryTimer = null;
-    }
-
-    final fixAgeMs = companionFixTime != null
-        ? DateTime.now().difference(companionFixTime).inMilliseconds
-        : null;
-    final shouldUseCompanion =
-        wantsCompanion && connectionVM.isConnected && hasRecentCompanionFix;
-
-    if (shouldUseCompanion != _lastShouldUseCompanion) {
-      debugPrint('[MapScreen] 📍 LocationPolicy: wantsCompanion=$wantsCompanion'
-          ' connected=${connectionVM.isConnected}'
-          ' hasGpsFix=${connectionVM.hasCompanionGpsFix}'
-          ' fixAgeMs=$fixAgeMs'
-          ' hasRecentFix=$hasRecentCompanionFix'
-          ' → shouldUseCompanion=$shouldUseCompanion'
-          ' phoneSub=${_positionSub != null}');
-      _lastShouldUseCompanion = shouldUseCompanion;
-    }
-
-    if (shouldUseCompanion) {
-      _stopPhoneLocationTracking();
-      final lat = connectionVM.companionLatitude;
-      final lon = connectionVM.companionLongitude;
-      if (lat != null && lon != null) {
-        // Only push a new location when the coordinates have actually changed.
-        // Calling _handleNewLocation unconditionally triggers setState → rebuild
-        // → postFrameCallback → _applyLocationPolicy → repeat, causing an
-        // infinite rebuild loop when the companion is stationary.
-        // Use DateTime.now() so that bearing/speed inference has a real elapsed
-        // time between successive fixes rather than the stale companionFixTime.
-        final alreadyAt =
-            _userLocation?.latitude == lat && _userLocation?.longitude == lon;
-        debugPrint(
-            '[MapScreen] 📍 Companion loc: $lat,$lon alreadyAt=$alreadyAt');
-        if (!alreadyAt) {
-          _handleNewLocation(
-            LatLng(lat, lon),
-            timestamp: DateTime.now(),
-          );
-        }
-      }
-    } else {
-      if (_positionSub == null && (Platform.isAndroid || Platform.isIOS)) {
-        debugPrint('[MapScreen] 📍 Starting phone GPS fallback');
-        _startPhoneLocationTracking();
-      }
-    }
-  }
-
   void _applyMapRotationForTrackUp() {
     if (!_isHeadingUp) return;
 
@@ -1436,40 +1309,53 @@ class _MapScreenState extends State<MapScreen> {
     LatLng next, {
     required DateTime? timestamp,
     double? speedMps,
-    double? headingDegrees,
   }) {
     final now = timestamp ?? DateTime.now();
 
-    // Compute movement/course bearing (track-up) from speed/heading when
-    // available, or from successive points otherwise.
-    const movingSpeedThresholdMps = 1.0;
+    // Compute movement/course bearing (track-up) from position delta.
+    // Hysteresis: engage GPS bearing above 5 m/s, drop back to magnetometer below 3 m/s.
+    const movingEngageThresholdMps = 5.0;
+    const movingDisengageThresholdMps = 3.0;
 
+    // Bearing is always computed from position delta — simpler and works for
+    // every GPS source. Speed decision prefers direct GPS speed when available,
+    // falls back to inferred speed from position delta.
+    bool moving = _isMovingForTrackUp; // preserve state when data is inconclusive
     double? nextCourse;
-    bool moving = false;
+    double? speed;
 
-    if (speedMps != null &&
-        speedMps.isFinite &&
-        speedMps > movingSpeedThresholdMps) {
-      moving = true;
-      if (headingDegrees != null) {
-        nextCourse = headingDegrees % 360.0;
-      }
-    }
-
-    if (nextCourse == null &&
-        _lastCourseLocation != null &&
-        _lastCourseTime != null) {
+    if (_lastCourseLocation != null && _lastCourseTime != null) {
       final prev = _lastCourseLocation!;
       final dtSeconds =
           now.difference(_lastCourseTime!).inMilliseconds / 1000.0;
       final distanceMeters = const Distance().as(LengthUnit.Meter, prev, next);
 
-      if (dtSeconds > 0 && distanceMeters >= 3.0) {
-        final inferredSpeed = distanceMeters / dtSeconds;
-        moving = inferredSpeed > movingSpeedThresholdMps;
-        if (moving) {
-          nextCourse = _bearingBetween(prev, next);
+      // Infer speed from position delta when no direct speed is available.
+      // Require 1m minimum to avoid dividing near-zero distances; jitter is
+      // suppressed naturally because jitter speeds fall below the engage threshold.
+      final inferredSpeed = (dtSeconds > 0 && distanceMeters >= 1.0)
+          ? distanceMeters / dtSeconds
+          : null;
+      final rawSpeed = (speedMps != null && speedMps.isFinite) ? speedMps : inferredSpeed;
+      if (rawSpeed != null) {
+        _smoothedSpeed = _smoothedSpeed == null
+            ? rawSpeed
+            : 0.8 * _smoothedSpeed! + 0.2 * rawSpeed;
+      }
+      speed = _smoothedSpeed;
+
+      if (speed != null) {
+        if (_isMovingForTrackUp) {
+          moving = speed >= movingDisengageThresholdMps;
+        } else {
+          moving = speed >= movingEngageThresholdMps;
         }
+      }
+
+      // Always update the bearing from position delta — independent of the
+      // speed-based moving state.
+      if (distanceMeters >= 1.0) {
+        nextCourse = _bearingBetween(prev, next);
       }
     }
 
@@ -1481,6 +1367,7 @@ class _MapScreenState extends State<MapScreen> {
       _locationError = null;
       _courseDegrees = nextCourse ?? _courseDegrees;
       _isMovingForTrackUp = moving;
+      _debugSpeed = speed != null ? speed.toStringAsFixed(1) : '?';
     });
 
     if (_isFollowingUser) {
@@ -1512,33 +1399,10 @@ class _MapScreenState extends State<MapScreen> {
   double _radToDeg(double rad) => rad * (180.0 / math.pi);
 
   Future<void> _getCurrentLocation() async {
-    if (!Platform.isAndroid && !Platform.isIOS) return;
-    setState(() {
-      _isLoadingLocation = true;
-      _locationError = null;
-    });
-
-    try {
-      // Get current position (permissions already granted at app startup)
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
-      );
-
-      setState(() {
-        _userLocation = LatLng(position.latitude, position.longitude);
-        _isLoadingLocation = false;
-      });
-
-      // Center map on user location
-      if (_userLocation != null) {
-        _mapController.move(_userLocation!, 15.0);
-      }
-    } catch (e) {
-      setState(() {
-        _locationError = 'Failed to get location: $e';
-        _isLoadingLocation = false;
-      });
+    await context.read<UserLocationService>().fetchNow();
+    final fix = context.read<UserLocationService>().latestFix;
+    if (fix != null && mounted) {
+      _mapController.move(fix.position, 15.0);
     }
   }
 
@@ -1546,6 +1410,7 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     final settingsService = context.watch<SettingsService>();
     final connectionVM = context.watch<ConnectionViewModel>();
+    final locationService = context.watch<UserLocationService>();
     final forwardingPolicy = context.watch<ForwardingPolicyService>();
     final tileCache = context.read<MapTileCacheService>();
     final db = context.read<AppDatabase>();
@@ -1573,11 +1438,12 @@ class _MapScreenState extends State<MapScreen> {
     final usingCompanionGps =
         wantsCompanion && connectionVM.isConnected && hasRecentCompanionFix;
 
-    final gpsSourceLine = usingCompanionGps
-        ? 'Companion GPS'
+    final activeSource = locationService.latestFix?.source;
+    final gpsSourceLine = activeSource == LocationSource.companion
+        ? 'GPS: Companion'
         : wantsCompanion
-            ? 'Phone GPS (fallback)'
-            : 'Phone GPS';
+            ? 'GPS: Phone (fallback)'
+            : 'GPS: Phone';
 
     // Keep local state in sync with persisted settings and connection state.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1585,9 +1451,6 @@ class _MapScreenState extends State<MapScreen> {
       if (_isHeadingUp != settingsService.settings.mapTrackUpMode) {
         setState(() {
           _isHeadingUp = settingsService.settings.mapTrackUpMode;
-          if (!_isHeadingUp) {
-            _isMovingForTrackUp = false;
-          }
         });
         if (!settingsService.settings.mapTrackUpMode) {
           _mapController.rotate(0);
@@ -1595,7 +1458,6 @@ class _MapScreenState extends State<MapScreen> {
           _applyMapRotationForTrackUp();
         }
       }
-      _applyLocationPolicy(settingsService, connectionVM);
     });
 
     return Scaffold(
@@ -1608,7 +1470,7 @@ class _MapScreenState extends State<MapScreen> {
               children: [
                 const Text('Map'),
                 Text(
-                  gpsSourceLine,
+                  '$gpsSourceLine  spd:$_debugSpeed',
                   style: const TextStyle(
                     fontSize: 12,
                     color: Colors.white70,
@@ -1721,6 +1583,13 @@ class _MapScreenState extends State<MapScreen> {
                     .updateVisibility(mapId, !m.isVisible);
               } else {
                 await settingsService.setMapProvider(value);
+                final newProvider = tileProviderForId(value);
+                final clampedZoom = _mapController.camera.zoom
+                    .clamp(3.0, newProvider.maxZoom.toDouble());
+                if (clampedZoom != _mapController.camera.zoom) {
+                  _mapController.move(
+                      _mapController.camera.center, clampedZoom);
+                }
               }
             },
             itemBuilder: (context) {
@@ -1881,7 +1750,7 @@ class _MapScreenState extends State<MapScreen> {
                   const LatLng(37.7749, -122.4194), // Default to SF
               initialZoom: 15.0,
               minZoom: 3.0,
-              maxZoom: 18.0,
+              maxZoom: tileConfig.maxZoom.toDouble(),
               interactionOptions: InteractionOptions(
                 flags: _isHeadingUp
                     ? (InteractiveFlag.all &
@@ -1911,6 +1780,7 @@ class _MapScreenState extends State<MapScreen> {
                 // Refresh overlay images on zoom change so the tile budget
                 // re-evaluates against the new viewport bounds.
                 if ((camera.zoom - _mapZoom).abs() > 0.05) {
+                  debugPrint('[Map] zoom=${camera.zoom.toStringAsFixed(2)}');
                   setState(() {
                     _mapZoom = camera.zoom;
                     try {
@@ -1949,7 +1819,7 @@ class _MapScreenState extends State<MapScreen> {
                 subdomains: tileConfig.subdomains,
                 tileProvider: tileCache.tileProvider,
                 userAgentPackageName: 'com.meshcore.team',
-                maxNativeZoom: 18,
+                maxNativeZoom: tileConfig.maxZoom,
               ),
               // KMZ imported overlay maps — rendered above the base tile layer
               if (_cachedOverlayImages.isNotEmpty)
@@ -2787,8 +2657,8 @@ class _MapScreenState extends State<MapScreen> {
                       },
                       child: Icon(
                         _isFollowingUser
-                            ? Icons.location_searching
-                            : Icons.my_location,
+                            ? Icons.my_location
+                            : Icons.location_searching,
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -2813,9 +2683,6 @@ class _MapScreenState extends State<MapScreen> {
                           }
                           _applyMapRotationForTrackUp();
                         } else {
-                          setState(() {
-                            _isMovingForTrackUp = false;
-                          });
                           _mapController.rotate(0);
                         }
                       },
@@ -2833,6 +2700,7 @@ class _MapScreenState extends State<MapScreen> {
                 ],
               ),
             ),
+
         ],
       ),
     );
