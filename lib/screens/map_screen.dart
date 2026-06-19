@@ -57,7 +57,7 @@ class _MapScreenState extends State<MapScreen> {
   LatLng? _lastCourseLocation;
   DateTime? _lastCourseTime;
   double? _smoothedSpeed;
-  String _debugSpeed = '?'; // temp: last received speed for display
+
 
   StreamSubscription<CompassXEvent>? _compassSub;
   Timer? _contactMarkerRefreshTimer;
@@ -1367,7 +1367,7 @@ class _MapScreenState extends State<MapScreen> {
       _locationError = null;
       _courseDegrees = nextCourse ?? _courseDegrees;
       _isMovingForTrackUp = moving;
-      _debugSpeed = speed != null ? speed.toStringAsFixed(1) : '?';
+
     });
 
     if (_isFollowingUser) {
@@ -1470,7 +1470,7 @@ class _MapScreenState extends State<MapScreen> {
               children: [
                 const Text('Map'),
                 Text(
-                  '$gpsSourceLine  spd:$_debugSpeed',
+                  gpsSourceLine,
                   style: const TextStyle(
                     fontSize: 12,
                     color: Colors.white70,
