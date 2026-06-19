@@ -1292,6 +1292,11 @@ class _MapScreenState extends State<MapScreen> {
       }
     }, onError: (Object error) {
       debugPrint('[MapScreen] Compass error: $error');
+    }, onDone: () {
+      if (!mounted) return;
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) _startCompassTracking();
+      });
     });
   }
 
