@@ -59,6 +59,10 @@ class UserLocationService extends ChangeNotifier {
   Timer? _companionTelemetryTimer;
   bool? _lastShouldUseCompanion;
   LatLng? _lastCompanionPosition;
+  // Once any external GPS injection is received, lock to fake phone GPS for
+  // the lifetime of this session (until hot restart). Prevents companion noise
+  // from overriding injected positions.
+  bool _fakeGpsLocked = false;
 
   void applyPolicy() {
     final wantsCompanion =
@@ -67,9 +71,17 @@ class UserLocationService extends ChangeNotifier {
     final fakeCompanion = _debugOverride?.companion;
     final fakePhone = _debugOverride?.phone;
 
+    if (fakePhone != null && fakePhone.enabled) {
+      _fakeGpsLocked = true;
+    }
+
     // --- Companion path ---
     final bool shouldUseCompanion;
-    if (fakeCompanion != null && fakeCompanion.enabled) {
+    if (_fakeGpsLocked) {
+      // Fake GPS injection has been received — lock out companion for this session.
+      _stopCompanionTelemetry();
+      shouldUseCompanion = false;
+    } else if (fakeCompanion != null && fakeCompanion.enabled) {
       // Fake companion: skip real telemetry polling, honour hasFix flag.
       _stopCompanionTelemetry();
       shouldUseCompanion = wantsCompanion && fakeCompanion.hasFix;

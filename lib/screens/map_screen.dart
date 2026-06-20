@@ -8,6 +8,7 @@ import 'dart:typed_data';
 
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:compassx/compassx.dart';
 import 'package:geolocator/geolocator.dart';
@@ -45,7 +46,8 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
+class _MapScreenState extends State<MapScreen>
+    with TickerProviderStateMixin {
   final MapController _mapController = MapController();
   LatLng? _userLocation;
   bool _isLoadingLocation = false;
@@ -61,6 +63,12 @@ class _MapScreenState extends State<MapScreen> {
 
   StreamSubscription<CompassXEvent>? _compassSub;
   Timer? _contactMarkerRefreshTimer;
+
+  Ticker? _rotationTicker;
+  double _rotationTarget = 0.0;
+  double _rotationStart = 0.0;
+  Duration? _rotationAnimStart;
+  static const _rotationDuration = Duration(milliseconds: 450);
 
   bool _isFollowingUser = false;
   bool _isHeadingUp = false;
@@ -1244,6 +1252,8 @@ class _MapScreenState extends State<MapScreen> {
     _contactMarkerRefreshTimer = null;
     _overlayMapsSub?.cancel();
     _overlayMapsSub = null;
+    _rotationTicker?.dispose();
+    _rotationTicker = null;
     super.dispose();
   }
 
@@ -1302,12 +1312,36 @@ class _MapScreenState extends State<MapScreen> {
 
   void _applyMapRotationForTrackUp() {
     if (!_isHeadingUp) return;
-
     final bearing = _isMovingForTrackUp ? _courseDegrees : _headingDegrees;
     if (bearing == null) return;
 
-    final mapRotation = (360.0 - bearing) % 360.0;
-    _mapController.rotate(mapRotation);
+    final newTarget = (360.0 - bearing) % 360.0;
+    final current = _mapController.camera.rotation % 360.0;
+    final delta = (newTarget - current + 540.0) % 360.0 - 180.0;
+
+    if (delta.abs() < 5.0) {
+      _mapController.rotate(newTarget);
+      return;
+    }
+
+    // Record where this animation segment starts so the ticker can ease from here.
+    _rotationStart = current;
+    _rotationTarget = current + delta; // unwrapped so interpolation crosses 0° cleanly
+    _rotationAnimStart = null; // will be set on first tick of this segment
+    _rotationTicker ??= createTicker(_onRotationTick)..start();
+  }
+
+  void _onRotationTick(Duration elapsed) {
+    if (!mounted || !_isHeadingUp) return;
+    _rotationAnimStart ??= elapsed;
+    final t = ((elapsed - _rotationAnimStart!).inMicroseconds /
+            _rotationDuration.inMicroseconds)
+        .clamp(0.0, 1.0);
+
+    // Sine-based ease-in-out (S-curve): smooth start and end.
+    final eased = (1.0 - math.cos(math.pi * t)) / 2.0;
+    final rotation = _rotationStart + (_rotationTarget - _rotationStart) * eased;
+    _mapController.rotate(rotation % 360.0);
   }
 
   void _handleNewLocation(
@@ -1343,9 +1377,16 @@ class _MapScreenState extends State<MapScreen> {
           : null;
       final rawSpeed = (speedMps != null && speedMps.isFinite) ? speedMps : inferredSpeed;
       if (rawSpeed != null) {
-        _smoothedSpeed = _smoothedSpeed == null
-            ? rawSpeed
-            : 0.8 * _smoothedSpeed! + 0.2 * rawSpeed;
+        // If the GPS directly reports below the disengage threshold, snap to it
+        // immediately — don't let the smoother hold a high value for minutes
+        // after stopping. Smoothing is only useful while actually moving.
+        if (speedMps != null && speedMps.isFinite && speedMps < movingDisengageThresholdMps) {
+          _smoothedSpeed = speedMps;
+        } else {
+          _smoothedSpeed = _smoothedSpeed == null
+              ? rawSpeed
+              : 0.8 * _smoothedSpeed! + 0.2 * rawSpeed;
+        }
       }
       speed = _smoothedSpeed;
 
@@ -1367,12 +1408,12 @@ class _MapScreenState extends State<MapScreen> {
     _lastCourseLocation = next;
     _lastCourseTime = now;
 
+    final wasMoving = _isMovingForTrackUp;
     setState(() {
       _userLocation = next;
       _locationError = null;
       _courseDegrees = nextCourse ?? _courseDegrees;
       _isMovingForTrackUp = moving;
-
     });
 
     if (_isFollowingUser) {
@@ -1380,7 +1421,9 @@ class _MapScreenState extends State<MapScreen> {
       _mapController.move(next, zoom);
     }
 
-    if (_isHeadingUp && moving) {
+    if (_isHeadingUp && (moving || wasMoving)) {
+      // On the moving→stopped transition, hand off to compass immediately
+      // rather than waiting for the next compass event to fire.
       _applyMapRotationForTrackUp();
     }
   }
@@ -1444,11 +1487,25 @@ class _MapScreenState extends State<MapScreen> {
         wantsCompanion && connectionVM.isConnected && hasRecentCompanionFix;
 
     final activeSource = locationService.latestFix?.source;
-    final gpsSourceLine = activeSource == LocationSource.companion
-        ? 'GPS: Companion'
-        : wantsCompanion
-            ? 'GPS: Phone (fallback)'
-            : 'GPS: Phone';
+    final gpsSourceLabel = activeSource == null
+        ? 'GPS: No fix'
+        : activeSource == LocationSource.companion
+            ? 'GPS: Companion'
+            : wantsCompanion
+                ? 'GPS: Phone (fallback)'
+                : 'GPS: Phone';
+
+    final speedKph = _smoothedSpeed != null
+        ? '${(_smoothedSpeed! * 3.6).toStringAsFixed(0)} kph'
+        : null;
+
+    final headingModeLabel = _isHeadingUp
+        ? (_isMovingForTrackUp ? 'Track-up (GPS)' : 'Track-up (Compass)')
+        : 'North-up';
+
+    final gpsSourceLine = [gpsSourceLabel, speedKph, headingModeLabel]
+        .whereType<String>()
+        .join(' | ');
 
     // Keep local state in sync with persisted settings and connection state.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1469,22 +1526,24 @@ class _MapScreenState extends State<MapScreen> {
       appBar: AppBar(
         title: Row(
           children: [
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Map'),
-                Text(
-                  gpsSourceLine,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.white70,
-                    height: 1.1,
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Map'),
+                  Text(
+                    gpsSourceLine,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.white70,
+                      height: 1.1,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-            const Spacer(),
             Tooltip(
               message: telemetryActive
                   ? 'Sharing location'
@@ -1825,6 +1884,7 @@ class _MapScreenState extends State<MapScreen> {
                 tileProvider: tileCache.tileProvider,
                 userAgentPackageName: 'com.meshcore.team',
                 maxNativeZoom: tileConfig.maxZoom,
+                maxZoom: tileConfig.maxZoom.toDouble(),
               ),
               // KMZ imported overlay maps — rendered above the base tile layer
               if (_cachedOverlayImages.isNotEmpty)
@@ -2310,11 +2370,35 @@ class _MapScreenState extends State<MapScreen> {
                           // So we compute the child rotation based on the desired screen direction.
                           // - North-up: arrow points to movement course when moving, otherwise compass.
                           // - Heading-up (track-up): arrow points up (screen), since up == heading/course.
-                          final double? desiredScreenDegrees = _isHeadingUp
-                              ? 0.0
-                              : (_isMovingForTrackUp
-                                  ? (course ?? heading)
-                                  : heading);
+                          // In track-up mode, pin the marker to the true
+                          // bearing immediately using the TARGET map rotation,
+                          // not the mid-animation camera.rotation. The map
+                          // animates to catch up; the marker is already correct.
+                          if (_isHeadingUp) {
+                            final bearing = _isMovingForTrackUp
+                                ? (course ?? heading)
+                                : heading;
+                            if (bearing == null) {
+                              return const Icon(
+                                Icons.navigation,
+                                color: Colors.blue,
+                                size: 30,
+                              );
+                            }
+                            final targetMapRotation = (360.0 - bearing) % 360.0;
+                            final angleRad = (0.0 - targetMapRotation) * (math.pi / 180.0);
+                            return Transform.rotate(
+                              angle: angleRad,
+                              child: const Icon(
+                                Icons.navigation,
+                                color: Colors.blue,
+                                size: 30,
+                              ),
+                            );
+                          }
+                          final double? desiredScreenDegrees = _isMovingForTrackUp
+                              ? (course ?? heading)
+                              : heading;
                           if (desiredScreenDegrees == null) {
                             // No compass and no usable course yet.
                             return const Icon(

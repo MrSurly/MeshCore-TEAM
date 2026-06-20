@@ -171,7 +171,7 @@ def make_packet(gps_type, lat, lon, speed, heading):
                        "payload": payload})
 
 
-def send_track(track, host, port, rate_hz, source="phone", speed_upper=None):
+def send_track(track, host, port, rate_hz, source="phone", speed_upper=None, hold_secs=5.0):
     interval = 1.0 / rate_hz
     points = list(interpolate(track, rate_hz, speed_upper=speed_upper))
 
@@ -187,6 +187,16 @@ def send_track(track, host, port, rate_hz, source="phone", speed_upper=None):
                   f"spd={speed:.1f} m/s  hdg={heading:.0f}°  t={elapsed:.2f}s")
             if i < len(points) - 1:
                 time.sleep(interval)
+
+        # Hold last position at speed=0 so the app transitions to compass mode.
+        if hold_secs > 0 and points:
+            last_lat, last_lon, _, last_hdg = points[-1]
+            hold_packet = make_packet(source, last_lat, last_lon, 0.0, last_hdg)
+            hold_ticks = max(1, int(hold_secs * rate_hz))
+            print(f"holding last position for {hold_secs:.1f}s ({hold_ticks} ticks) ...")
+            for _ in range(hold_ticks):
+                time.sleep(interval)
+                sock.sendall((hold_packet + "\n").encode())
 
     elapsed_total = time.monotonic() - t0
     expected_total = (len(points) - 1) * interval
@@ -208,6 +218,8 @@ def main():
                         help="playback speed for GeoJSON input, e.g. 1.4, 5mph, 10kph, 3knots (default: 1.4 m/s)")
     parser.add_argument("--speed-upper", type=parse_speed, default=None,
                         help="when set, speed varies gently between --speed and this value")
+    parser.add_argument("--hold", type=float, default=5.0,
+                        help="seconds to hold the last position at speed=0 after the track ends (default: 5)")
     parser.add_argument("--av", action="store_true",
                         help="send a single fixed location (33.567512, -117.722262) and exit")
     args = parser.parse_args()
@@ -233,7 +245,7 @@ def main():
         sys.exit(1)
 
     send_track(track, args.host, args.port, args.rate, source=args.source,
-               speed_upper=speed_upper)
+               speed_upper=speed_upper, hold_secs=args.hold)
 
 
 if __name__ == "__main__":

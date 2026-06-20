@@ -1070,14 +1070,15 @@ class ConnectionViewModel extends ChangeNotifier {
       offset += size;
     }
 
-    // Apply the fix switch as the authoritative qualifier when present.
+    // Apply the fix switch as the authoritative qualifier.
     // • switch = true  → trust the GPS fix (firmware confirmed lock).
     // • switch = false → discard the GPS fix regardless of coordinates.
-    // • switch absent  → keep looksValid result (older firmware fallback).
-    if (gpsFixSwitch != null && !gpsFixSwitch) {
+    // • switch absent  → discard: coordinates without explicit fix confirmation
+    //                    are unreliable (pre-fix GPS noise, cached NVRAM values).
+    if (gpsFixSwitch != true) {
       if (gpsFix != null) {
         debugPrint(
-            '[ConnectionVM] ⚠️ GPS fix discarded — companion reports no fix (switch=0)');
+            '[ConnectionVM] ⚠️ GPS fix discarded — ${gpsFixSwitch == false ? "companion reports no fix (switch=0)" : "no fix switch in frame"}');
       }
       gpsFix = null;
     }
