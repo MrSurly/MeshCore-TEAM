@@ -55,6 +55,9 @@ class UserLocationService extends ChangeNotifier {
   bool get isLoadingLocation => _isLoadingLocation;
 
   StreamSubscription<Position>? _positionSub;
+  StreamSubscription<ServiceStatus>? _locationServiceSub;
+  bool _locationServiceAvailable = true;
+  bool _startingPhoneTracking = false;
   Timer? _phonePollingTimer;
   Timer? _companionTelemetryTimer;
   bool? _lastShouldUseCompanion;
@@ -152,8 +155,11 @@ class UserLocationService extends ChangeNotifier {
           ));
         }
       } else {
-        if (_positionSub == null && (Platform.isAndroid || Platform.isIOS)) {
-          _startPhoneTracking();
+        if (_positionSub == null &&
+            !_startingPhoneTracking &&
+            _locationServiceAvailable &&
+            (Platform.isAndroid || Platform.isIOS)) {
+          unawaited(_startPhoneTracking());
         }
       }
     }
@@ -193,53 +199,35 @@ class UserLocationService extends ChangeNotifier {
             ? position.heading
             : null,
       ));
-    } catch (e) {
+    } catch (_) {
       _isLoadingLocation = false;
-      if (e is TimeoutException) {
-        // Stream will deliver the first fix when GPS acquires; don't surface a
-        // transient timeout as an error.
-        notifyListeners();
-        return;
-      }
-      _locationError = 'Failed to get location: $e';
       notifyListeners();
     }
   }
 
-  void _startPhoneTracking() {
-    _positionSub?.cancel();
-    _phonePollingTimer?.cancel();
+  Future<void> _startPhoneTracking() async {
+    if (_startingPhoneTracking) return;
+    _startingPhoneTracking = true;
 
-    fetchNow();
+    try {
+      _positionSub?.cancel();
+      _phonePollingTimer?.cancel();
 
-    const settings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 0,
-    );
+      _watchLocationService();
 
-    _positionSub = Geolocator.getPositionStream(locationSettings: settings)
-        .listen((position) {
-      _emitFix(UserLocationFix(
-        position: LatLng(position.latitude, position.longitude),
-        timestamp: DateTime.now(),
-        source: LocationSource.phone,
-        speedMps: position.speed.isFinite ? position.speed : null,
-        headingDegrees: (position.heading.isFinite && position.heading >= 0)
-            ? position.heading
-            : null,
-      ));
-    }, onError: (Object error) {
-      _locationError = 'Location stream error: $error';
-      notifyListeners();
-    });
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      _locationServiceAvailable = serviceEnabled;
+      if (!serviceEnabled) return;
 
-    // Safety-net poll in case the OS throttles the stream.
-    _phonePollingTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
-      try {
-        final position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-          timeLimit: const Duration(seconds: 3),
-        );
+      fetchNow();
+
+      const settings = LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 0,
+      );
+
+      _positionSub = Geolocator.getPositionStream(locationSettings: settings)
+          .listen((position) {
         _emitFix(UserLocationFix(
           position: LatLng(position.latitude, position.longitude),
           timestamp: DateTime.now(),
@@ -249,7 +237,55 @@ class UserLocationService extends ChangeNotifier {
               ? position.heading
               : null,
         ));
-      } catch (_) {}
+      }, onError: (Object error) {
+        _locationError = 'Location stream error: $error';
+        notifyListeners();
+      });
+
+      // Safety-net poll in case the OS throttles the stream.
+      _phonePollingTimer =
+          Timer.periodic(const Duration(seconds: 2), (_) async {
+        if (!_locationServiceAvailable) return;
+        try {
+          final position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+            timeLimit: const Duration(seconds: 3),
+          );
+          _emitFix(UserLocationFix(
+            position: LatLng(position.latitude, position.longitude),
+            timestamp: DateTime.now(),
+            source: LocationSource.phone,
+            speedMps: position.speed.isFinite ? position.speed : null,
+            headingDegrees: (position.heading.isFinite && position.heading >= 0)
+                ? position.heading
+                : null,
+          ));
+        } catch (_) {}
+      });
+    } finally {
+      _startingPhoneTracking = false;
+    }
+  }
+
+  void _watchLocationService() {
+    if (_locationServiceSub != null) return;
+    _locationServiceSub =
+        Geolocator.getServiceStatusStream().listen((status) {
+      if (status == ServiceStatus.disabled) {
+        _locationServiceAvailable = false;
+        _isLoadingLocation = false;
+        _stopPhoneTracking();
+        // Trigger the system prompt exactly once so the user knows tracking
+        // stopped. Ignore the result — the dialog is the point.
+        Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 5),
+        ).catchError((_) {});
+        notifyListeners();
+      } else if (status == ServiceStatus.enabled) {
+        _locationServiceAvailable = true;
+        applyPolicy();
+      }
     });
   }
 
@@ -279,6 +315,8 @@ class UserLocationService extends ChangeNotifier {
     _debugOverride?.removeListener(_onDependencyChanged);
     _stopPhoneTracking();
     _stopCompanionTelemetry();
+    _locationServiceSub?.cancel();
+    _locationServiceSub = null;
     super.dispose();
   }
 }
