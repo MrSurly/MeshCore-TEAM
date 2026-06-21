@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:meshcore_team/database/database.dart';
+import 'package:meshcore_team/database/tables.dart' show NodeType;
 import 'package:meshcore_team/models/unread_models.dart';
 import 'package:meshcore_team/repositories/contact_repository.dart';
 import 'direct_message_screen.dart';
@@ -163,7 +164,7 @@ class ContactListTile extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            if (contact.isRepeater)
+            if (contact.nodeType == NodeType.repeater)
               const Padding(
                 padding: EdgeInsets.only(left: 8),
                 child: Text(
@@ -180,7 +181,7 @@ class ContactListTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Hash: ${contact.hash.toRadixString(16)}'),
-            if (contact.isRepeater)
+            if (contact.nodeType == NodeType.repeater)
               const Text(
                 'Repeater',
                 style: TextStyle(fontWeight: FontWeight.w600),
@@ -198,7 +199,7 @@ class ContactListTile extends StatelessWidget {
             ? const Icon(Icons.location_on, color: Colors.blue)
             : const Icon(Icons.location_off, color: Colors.grey),
         onTap: () {
-          if (contact.isRepeater) {
+          if (contact.nodeType == NodeType.repeater) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('Direct messages are disabled for repeaters'),

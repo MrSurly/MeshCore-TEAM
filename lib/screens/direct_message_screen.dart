@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import 'dart:typed_data';
 
 import '../database/database.dart';
+import '../database/tables.dart' show NodeType;
 import '../repositories/contact_repository.dart';
 import '../repositories/message_repository.dart';
 import '../services/message_notification_service.dart';
@@ -87,7 +88,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final recipientKey = _bytesToHex(widget.contact.publicKey);
-    final isRepeater = widget.contact.isRepeater;
+    final isRepeater = widget.contact.nodeType == NodeType.repeater;
 
     return Scaffold(
       appBar: AppBar(
@@ -495,7 +496,7 @@ class _DirectMessageScreenState extends State<DirectMessageScreen> {
   }
 
   Future<void> _sendMessage() async {
-    if (widget.contact.isRepeater) {
+    if (widget.contact.nodeType == NodeType.repeater) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

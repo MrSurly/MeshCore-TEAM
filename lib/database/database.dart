@@ -24,7 +24,8 @@ import 'daos/imported_overlay_maps_dao.dart';
 part 'database.g.dart';
 
 // Type aliases for convenience
-typedef Contact = ContactData;
+typedef Contact = NodeData;
+typedef ContactData = NodeData; // backward-compat alias for legacy call sites
 typedef Channel = ChannelData;
 typedef Message = MessageData;
 typedef Waypoint = WaypointData;
@@ -41,7 +42,7 @@ typedef AckRecord = AckRecordData;
 /// Schema matches Android TEAM app (meshcore-team) exactly.
 @DriftDatabase(
   tables: [
-    Contacts,
+    Nodes,
     Channels,
     Messages,
     Waypoints,
@@ -70,7 +71,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -116,7 +117,8 @@ class AppDatabase extends _$AppDatabase {
 
           // Migration from schema version 5 to 6: Add isAutonomousDevice to contacts
           if (from <= 5 && to >= 6) {
-            await m.addColumn(contacts, contacts.isAutonomousDevice);
+            await customStatement(
+                'ALTER TABLE contacts ADD COLUMN is_autonomous_device INTEGER NOT NULL DEFAULT 0');
             print('[Migration] Added isAutonomousDevice to contacts table');
           }
 
@@ -132,6 +134,40 @@ class AppDatabase extends _$AppDatabase {
           if (from <= 7 && to >= 8) {
             await m.createTable(importedOverlayMaps);
             print('[Migration] Created imported_overlay_maps table');
+          }
+
+          // Migration from schema version 8 to 9: Replace contacts table with
+          // nodes, using a proper NodeType enum instead of boolean flags.
+          if (from <= 8 && to >= 9) {
+            await m.createTable(nodes);
+            final rows = await customSelect(
+              "SELECT name FROM sqlite_master WHERE type='table' AND name='contacts'",
+            ).get();
+            if (rows.isNotEmpty) {
+              await customStatement('''
+                INSERT INTO nodes (
+                  public_key, hash, name, latitude, longitude, last_seen,
+                  companion_battery_milli_volts, phone_battery_milli_volts,
+                  node_type, is_direct, hop_count,
+                  last_telemetry_channel_idx, last_telemetry_timestamp,
+                  is_out_of_range, is_autonomous_device, companion_device_key
+                )
+                SELECT
+                  public_key, hash, name, latitude, longitude, last_seen,
+                  companion_battery_milli_volts, phone_battery_milli_volts,
+                  CASE
+                    WHEN is_repeater  = 1 THEN 2
+                    WHEN is_room_server = 1 THEN 3
+                    ELSE 1
+                  END,
+                  is_direct, hop_count,
+                  last_telemetry_channel_idx, last_telemetry_timestamp,
+                  is_out_of_range, COALESCE(is_autonomous_device, 0),
+                  companion_device_key
+                FROM contacts
+              ''');
+              print('[Migration] Migrated contacts -> nodes');
+            }
           }
         },
       );

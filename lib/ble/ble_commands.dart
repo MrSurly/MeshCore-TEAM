@@ -167,24 +167,12 @@ class BleCommands {
   }
 
   /// Build ADD_UPDATE_CONTACT command
-  /// publicKey: 32-byte public key
-  /// name: contact name (max 32 bytes)
-  /// type: Advertisement type (1 = ADV_TYPE_CHAT)
-  /// isRepeater: Whether contact is a repeater
-  /// isRoomServer: Whether contact is a room server
-  /// isDirect: Whether contact is direct (0 hops)
-  /// hopCount: Number of hops to contact
-  /// latitude: Contact latitude (optional)
-  /// longitude: Contact longitude (optional)
-  /// lastSeen: Last seen timestamp in milliseconds
   /// Format: [cmd][32-pubkey][type][flags][path_len][64-path][32-name][4-timestamp][4-lat][4-lon][4-lastmod]
   /// Total: 148 bytes
   static Uint8List buildAddUpdateContact({
     required List<int> publicKey,
     required String name,
-    int type = 1, // ADV_TYPE_CHAT
-    bool isRepeater = false,
-    bool isRoomServer = false,
+    int type = 1, // ADV_TYPE_* (NodeType.index)
     bool isDirect = true,
     int hopCount = 0,
     double? latitude,
@@ -197,14 +185,11 @@ class BleCommands {
     // Public key (32 bytes)
     writer.writeBytes(Uint8List.fromList(publicKey));
 
-    // Type (1 byte)
+    // Type (1 byte): ADV_TYPE_* value
     writer.writeByte(type);
 
-    // Flags (1 byte): bit 0 = repeater, bit 1 = room server
-    int flags = 0;
-    if (isRepeater) flags |= 0x01;
-    if (isRoomServer) flags |= 0x02;
-    writer.writeByte(flags);
+    // Flags (1 byte): reserved — bit 0 is the firmware "favourite" bit
+    writer.writeByte(0);
 
     // Path length (1 byte)
     writer.writeByte(isDirect ? 0 : hopCount);

@@ -9,6 +9,7 @@ import 'package:meshcore_team/ble/ble_commands.dart';
 import 'package:meshcore_team/ble/ble_responses.dart';
 import 'package:meshcore_team/ble/mesh_ble_device.dart';
 import 'package:meshcore_team/database/database.dart';
+import 'package:meshcore_team/database/tables.dart' show NodeType;
 import 'package:drift/drift.dart' as drift;
 
 /// BLE Service
@@ -183,9 +184,7 @@ class BleService extends ChangeNotifier {
   Future<bool> addUpdateContact({
     required List<int> publicKey,
     required String name,
-    int type = 1,
-    bool isRepeater = false,
-    bool isRoomServer = false,
+    NodeType nodeType = NodeType.chat,
     bool isDirect = true,
     int hopCount = 0,
     double? latitude,
@@ -196,9 +195,7 @@ class BleService extends ChangeNotifier {
     final frame = BleCommands.buildAddUpdateContact(
       publicKey: publicKey,
       name: name,
-      type: type,
-      isRepeater: isRepeater,
-      isRoomServer: isRoomServer,
+      type: nodeType.index,
       isDirect: isDirect,
       hopCount: hopCount,
       latitude: latitude,
@@ -277,14 +274,13 @@ class BleService extends ChangeNotifier {
 
     // Upsert contact to database
     await _database.contactsDao.upsertContact(
-      ContactsCompanion(
+      NodesCompanion(
         publicKey: drift.Value(response.publicKey),
         name: drift.Value(response.name),
         latitude: drift.Value(response.latitude),
         longitude: drift.Value(response.longitude),
         lastSeen: drift.Value(response.lastSeen),
-        isRepeater: drift.Value(response.isRepeater),
-        isRoomServer: drift.Value(response.isRoomServer),
+        nodeType: drift.Value(response.nodeType),
         isDirect: drift.Value(response.isDirect),
         hopCount: drift.Value(response.hopCount),
       ),

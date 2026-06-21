@@ -11,6 +11,7 @@ import 'package:meshcore_team/ble/ble_constants.dart';
 import 'package:meshcore_team/ble/ble_responses.dart';
 import 'package:meshcore_team/database/database.dart';
 import 'package:meshcore_team/database/daos/contacts_dao.dart';
+import 'package:meshcore_team/database/tables.dart' show NodeType;
 import 'package:meshcore_team/models/sync_status.dart';
 import 'package:meshcore_team/models/unread_models.dart';
 import 'package:meshcore_team/services/settings_service.dart';
@@ -131,7 +132,7 @@ class ContactRepository {
   ///
   /// Phase 1 (BLE receive): buffer all incoming ContactResponse objects in
   /// memory — no DB I/O so the BLE stream gets full priority.
-  /// Phase 2 (DB write): build ContactsCompanion rows and write them all in a
+  /// Phase 2 (DB write): build NodesCompanion rows and write them all in a
   /// single transaction so SQLite commits once instead of N times.
   Future<ContactSyncResult> _collectContacts({
     required int maxTotalTimeMs,
@@ -347,15 +348,14 @@ class ContactRepository {
         }
 
         final rows = receivedContacts.map((response) {
-          return ContactsCompanion.insert(
+          return NodesCompanion.insert(
             publicKey: response.publicKey,
             hash: _calculateHash(response.publicKey),
             name: drift.Value(response.name),
             latitude: drift.Value(response.latitude),
             longitude: drift.Value(response.longitude),
             lastSeen: response.lastSeen * 1000,
-            isRepeater: drift.Value(response.isRepeater),
-            isRoomServer: drift.Value(response.isRoomServer),
+            nodeType: drift.Value(response.nodeType),
             isDirect: drift.Value(response.isDirect),
             hopCount: drift.Value(response.hopCount),
             companionDeviceKey: drift.Value(companionKey),

@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:meshcore_team/database/database.dart';
+import 'package:meshcore_team/database/tables.dart' show NodeType;
 import 'package:meshcore_team/models/app_settings.dart';
 import 'package:meshcore_team/services/forwarding_policy_service.dart';
 import 'package:meshcore_team/services/settings_service.dart';
@@ -230,7 +231,7 @@ class _ForwardingDebugScreenState extends State<ForwardingDebugScreen> {
         isSelf: true,
         isDirect: true,
         hopCount: 0,
-        isRepeater: false,
+        nodeType: NodeType.chat,
         isOutOfRange: false,
         lastSeen: null,
         sourceContact: null,
@@ -253,7 +254,7 @@ class _ForwardingDebugScreenState extends State<ForwardingDebugScreen> {
             isSelf: false,
             isDirect: contact?.isDirect ?? (state.lastPathLen <= 0),
             hopCount: state.lastPathLen,
-            isRepeater: contact?.isRepeater ?? false,
+            nodeType: contact?.nodeType ?? NodeType.chat,
             isOutOfRange: contact?.isOutOfRange ?? false,
             lastSeen: DateTime.fromMillisecondsSinceEpoch(state.lastSeen),
             sourceContact: contact,
@@ -428,7 +429,7 @@ class _ForwardingDebugScreenState extends State<ForwardingDebugScreen> {
             Text('Public key: ${_hex(selectedNode.publicKey, byteCount: 8)}'),
             Text('Hop count: ${_hopLabel(selectedNode.hopCount)}'),
             Text('Direct: ${selectedNode.isDirect ? 'yes' : 'no'}'),
-            Text('Repeater: ${selectedNode.isRepeater ? 'yes' : 'no'}'),
+            Text('Repeater: ${selectedNode.nodeType == NodeType.repeater ? 'yes' : 'no'}'),
             Text('Out of range: ${selectedNode.isOutOfRange ? 'yes' : 'no'}'),
             Text('Last seen: ${_timeLabel(selectedNode.lastSeen)}'),
             if (selectedNode.sourceState != null) ...[
@@ -593,7 +594,7 @@ class _DebugNode {
   final bool isSelf;
   final bool isDirect;
   final int hopCount;
-  final bool isRepeater;
+  final NodeType nodeType;
   final bool isOutOfRange;
   final DateTime? lastSeen;
   final ContactData? sourceContact;
@@ -606,7 +607,7 @@ class _DebugNode {
     required this.isSelf,
     required this.isDirect,
     required this.hopCount,
-    required this.isRepeater,
+    required this.nodeType,
     required this.isOutOfRange,
     required this.lastSeen,
     required this.sourceContact,

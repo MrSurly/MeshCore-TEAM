@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:meshcore_team/ble/ble_constants.dart';
 import 'package:meshcore_team/ble/ble_protocol.dart';
+import 'package:meshcore_team/database/tables.dart' show NodeType;
 
 /// Base response type
 abstract class BleResponse {
@@ -91,8 +92,7 @@ class ContactResponse extends BleResponse {
   final int
       lastmod; // Firmware lastmod timestamp (seconds) — used for incremental sync
   final int snr; // Signal-to-noise ratio
-  final bool isRepeater;
-  final bool isRoomServer;
+  final NodeType nodeType; // ADV_TYPE_* from firmware
   final bool isDirect;
   final int hopCount;
 
@@ -104,8 +104,7 @@ class ContactResponse extends BleResponse {
     required this.lastSeen,
     required this.lastmod,
     required this.snr,
-    required this.isRepeater,
-    required this.isRoomServer,
+    required this.nodeType,
     required this.isDirect,
     required this.hopCount,
   }) : super(BleConstants.respContact);
@@ -405,12 +404,11 @@ class BleResponseParser {
     final outPathLen =
         reader.readInt8(); // ContactInfo.out_path_len (-1 = unknown)
 
-    // In firmware, repeater/room-server identity is exclusively encoded via contactType:
-    //   2 = ADV_TYPE_REPEATER, 3 = ADV_TYPE_ROOM  (see AdvertDataHelpers.h)
-    // flags bit 0 is the firmware "favourite" bit — NOT a repeater indicator.
-    // Using flags as a fallback incorrectly marks favourited chat contacts as repeaters.
-    final isRepeater = contactType == 2;
-    final isRoomServer = contactType == 3;
+    // Map firmware ADV_TYPE_* byte directly to NodeType enum.
+    // Clamp unknown values to NodeType.none rather than throwing.
+    final nodeType = contactType >= 0 && contactType < NodeType.values.length
+        ? NodeType.values[contactType]
+        : NodeType.none;
 
     final hopCount = outPathLen;
     final isDirect = hopCount == 0;
@@ -454,8 +452,7 @@ class BleResponseParser {
       lastSeen: lastSeen,
       lastmod: lastmod,
       snr: snr,
-      isRepeater: isRepeater,
-      isRoomServer: isRoomServer,
+      nodeType: nodeType,
       isDirect: isDirect,
       hopCount: hopCount,
     );

@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'database/database.dart';
+import 'database/tables.dart' show NodeType;
 import 'services/settings_service.dart';
 import 'services/map_tile_cache_service.dart';
 import 'services/kmz_import_service.dart';
@@ -316,7 +317,7 @@ void _handleNotificationTap(
 
       final contact = await database.contactsDao.getContactByHash(contactHash);
       if (contact != null) {
-        if (contact.isRepeater) {
+        if (contact.nodeType == NodeType.repeater) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Direct messages are disabled for repeaters'),

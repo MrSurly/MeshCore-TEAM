@@ -3,12 +3,11 @@
 part of 'database.dart';
 
 // ignore_for_file: type=lint
-class $ContactsTable extends Contacts
-    with TableInfo<$ContactsTable, ContactData> {
+class $NodesTable extends Nodes with TableInfo<$NodesTable, NodeData> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
-  $ContactsTable(this.attachedDatabase, [this._alias]);
+  $NodesTable(this.attachedDatabase, [this._alias]);
   static const VerificationMeta _publicKeyMeta =
       const VerificationMeta('publicKey');
   @override
@@ -55,26 +54,13 @@ class $ContactsTable extends Contacts
   late final GeneratedColumn<int> phoneBatteryMilliVolts = GeneratedColumn<int>(
       'phone_battery_milli_volts', aliasedName, true,
       type: DriftSqlType.int, requiredDuringInsert: false);
-  static const VerificationMeta _isRepeaterMeta =
-      const VerificationMeta('isRepeater');
   @override
-  late final GeneratedColumn<bool> isRepeater = GeneratedColumn<bool>(
-      'is_repeater', aliasedName, false,
-      type: DriftSqlType.bool,
-      requiredDuringInsert: false,
-      defaultConstraints:
-          GeneratedColumn.constraintIsAlways('CHECK ("is_repeater" IN (0, 1))'),
-      defaultValue: const Constant(false));
-  static const VerificationMeta _isRoomServerMeta =
-      const VerificationMeta('isRoomServer');
-  @override
-  late final GeneratedColumn<bool> isRoomServer = GeneratedColumn<bool>(
-      'is_room_server', aliasedName, false,
-      type: DriftSqlType.bool,
-      requiredDuringInsert: false,
-      defaultConstraints: GeneratedColumn.constraintIsAlways(
-          'CHECK ("is_room_server" IN (0, 1))'),
-      defaultValue: const Constant(false));
+  late final GeneratedColumnWithTypeConverter<NodeType, int> nodeType =
+      GeneratedColumn<int>('node_type', aliasedName, false,
+              type: DriftSqlType.int,
+              requiredDuringInsert: false,
+              defaultValue: const Constant(1))
+          .withConverter<NodeType>($NodesTable.$converternodeType);
   static const VerificationMeta _isDirectMeta =
       const VerificationMeta('isDirect');
   @override
@@ -141,8 +127,7 @@ class $ContactsTable extends Contacts
         lastSeen,
         companionBatteryMilliVolts,
         phoneBatteryMilliVolts,
-        isRepeater,
-        isRoomServer,
+        nodeType,
         isDirect,
         hopCount,
         lastTelemetryChannelIdx,
@@ -155,9 +140,9 @@ class $ContactsTable extends Contacts
   String get aliasedName => _alias ?? actualTableName;
   @override
   String get actualTableName => $name;
-  static const String $name = 'contacts';
+  static const String $name = 'nodes';
   @override
-  VerificationContext validateIntegrity(Insertable<ContactData> instance,
+  VerificationContext validateIntegrity(Insertable<NodeData> instance,
       {bool isInserting = false}) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
@@ -204,18 +189,6 @@ class $ContactsTable extends Contacts
           phoneBatteryMilliVolts.isAcceptableOrUnknown(
               data['phone_battery_milli_volts']!, _phoneBatteryMilliVoltsMeta));
     }
-    if (data.containsKey('is_repeater')) {
-      context.handle(
-          _isRepeaterMeta,
-          isRepeater.isAcceptableOrUnknown(
-              data['is_repeater']!, _isRepeaterMeta));
-    }
-    if (data.containsKey('is_room_server')) {
-      context.handle(
-          _isRoomServerMeta,
-          isRoomServer.isAcceptableOrUnknown(
-              data['is_room_server']!, _isRoomServerMeta));
-    }
     if (data.containsKey('is_direct')) {
       context.handle(_isDirectMeta,
           isDirect.isAcceptableOrUnknown(data['is_direct']!, _isDirectMeta));
@@ -261,9 +234,9 @@ class $ContactsTable extends Contacts
   @override
   Set<GeneratedColumn> get $primaryKey => {publicKey};
   @override
-  ContactData map(Map<String, dynamic> data, {String? tablePrefix}) {
+  NodeData map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return ContactData(
+    return NodeData(
       publicKey: attachedDatabase.typeMapping
           .read(DriftSqlType.blob, data['${effectivePrefix}public_key'])!,
       hash: attachedDatabase.typeMapping
@@ -282,10 +255,9 @@ class $ContactsTable extends Contacts
       phoneBatteryMilliVolts: attachedDatabase.typeMapping.read(
           DriftSqlType.int,
           data['${effectivePrefix}phone_battery_milli_volts']),
-      isRepeater: attachedDatabase.typeMapping
-          .read(DriftSqlType.bool, data['${effectivePrefix}is_repeater'])!,
-      isRoomServer: attachedDatabase.typeMapping
-          .read(DriftSqlType.bool, data['${effectivePrefix}is_room_server'])!,
+      nodeType: $NodesTable.$converternodeType.fromSql(attachedDatabase
+          .typeMapping
+          .read(DriftSqlType.int, data['${effectivePrefix}node_type'])!),
       isDirect: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}is_direct'])!,
       hopCount: attachedDatabase.typeMapping
@@ -305,12 +277,15 @@ class $ContactsTable extends Contacts
   }
 
   @override
-  $ContactsTable createAlias(String alias) {
-    return $ContactsTable(attachedDatabase, alias);
+  $NodesTable createAlias(String alias) {
+    return $NodesTable(attachedDatabase, alias);
   }
+
+  static JsonTypeConverter2<NodeType, int, int> $converternodeType =
+      const EnumIndexConverter<NodeType>(NodeType.values);
 }
 
-class ContactData extends DataClass implements Insertable<ContactData> {
+class NodeData extends DataClass implements Insertable<NodeData> {
   final Uint8List publicKey;
   final int hash;
   final String? name;
@@ -319,8 +294,7 @@ class ContactData extends DataClass implements Insertable<ContactData> {
   final int lastSeen;
   final int? companionBatteryMilliVolts;
   final int? phoneBatteryMilliVolts;
-  final bool isRepeater;
-  final bool isRoomServer;
+  final NodeType nodeType;
   final bool isDirect;
   final int hopCount;
   final int? lastTelemetryChannelIdx;
@@ -328,7 +302,7 @@ class ContactData extends DataClass implements Insertable<ContactData> {
   final bool isOutOfRange;
   final bool isAutonomousDevice;
   final String? companionDeviceKey;
-  const ContactData(
+  const NodeData(
       {required this.publicKey,
       required this.hash,
       this.name,
@@ -337,8 +311,7 @@ class ContactData extends DataClass implements Insertable<ContactData> {
       required this.lastSeen,
       this.companionBatteryMilliVolts,
       this.phoneBatteryMilliVolts,
-      required this.isRepeater,
-      required this.isRoomServer,
+      required this.nodeType,
       required this.isDirect,
       required this.hopCount,
       this.lastTelemetryChannelIdx,
@@ -368,8 +341,10 @@ class ContactData extends DataClass implements Insertable<ContactData> {
     if (!nullToAbsent || phoneBatteryMilliVolts != null) {
       map['phone_battery_milli_volts'] = Variable<int>(phoneBatteryMilliVolts);
     }
-    map['is_repeater'] = Variable<bool>(isRepeater);
-    map['is_room_server'] = Variable<bool>(isRoomServer);
+    {
+      map['node_type'] =
+          Variable<int>($NodesTable.$converternodeType.toSql(nodeType));
+    }
     map['is_direct'] = Variable<bool>(isDirect);
     map['hop_count'] = Variable<int>(hopCount);
     if (!nullToAbsent || lastTelemetryChannelIdx != null) {
@@ -387,8 +362,8 @@ class ContactData extends DataClass implements Insertable<ContactData> {
     return map;
   }
 
-  ContactsCompanion toCompanion(bool nullToAbsent) {
-    return ContactsCompanion(
+  NodesCompanion toCompanion(bool nullToAbsent) {
+    return NodesCompanion(
       publicKey: Value(publicKey),
       hash: Value(hash),
       name: name == null && nullToAbsent ? const Value.absent() : Value(name),
@@ -406,8 +381,7 @@ class ContactData extends DataClass implements Insertable<ContactData> {
       phoneBatteryMilliVolts: phoneBatteryMilliVolts == null && nullToAbsent
           ? const Value.absent()
           : Value(phoneBatteryMilliVolts),
-      isRepeater: Value(isRepeater),
-      isRoomServer: Value(isRoomServer),
+      nodeType: Value(nodeType),
       isDirect: Value(isDirect),
       hopCount: Value(hopCount),
       lastTelemetryChannelIdx: lastTelemetryChannelIdx == null && nullToAbsent
@@ -424,10 +398,10 @@ class ContactData extends DataClass implements Insertable<ContactData> {
     );
   }
 
-  factory ContactData.fromJson(Map<String, dynamic> json,
+  factory NodeData.fromJson(Map<String, dynamic> json,
       {ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return ContactData(
+    return NodeData(
       publicKey: serializer.fromJson<Uint8List>(json['publicKey']),
       hash: serializer.fromJson<int>(json['hash']),
       name: serializer.fromJson<String?>(json['name']),
@@ -438,8 +412,8 @@ class ContactData extends DataClass implements Insertable<ContactData> {
           serializer.fromJson<int?>(json['companionBatteryMilliVolts']),
       phoneBatteryMilliVolts:
           serializer.fromJson<int?>(json['phoneBatteryMilliVolts']),
-      isRepeater: serializer.fromJson<bool>(json['isRepeater']),
-      isRoomServer: serializer.fromJson<bool>(json['isRoomServer']),
+      nodeType: $NodesTable.$converternodeType
+          .fromJson(serializer.fromJson<int>(json['nodeType'])),
       isDirect: serializer.fromJson<bool>(json['isDirect']),
       hopCount: serializer.fromJson<int>(json['hopCount']),
       lastTelemetryChannelIdx:
@@ -465,8 +439,8 @@ class ContactData extends DataClass implements Insertable<ContactData> {
       'companionBatteryMilliVolts':
           serializer.toJson<int?>(companionBatteryMilliVolts),
       'phoneBatteryMilliVolts': serializer.toJson<int?>(phoneBatteryMilliVolts),
-      'isRepeater': serializer.toJson<bool>(isRepeater),
-      'isRoomServer': serializer.toJson<bool>(isRoomServer),
+      'nodeType': serializer
+          .toJson<int>($NodesTable.$converternodeType.toJson(nodeType)),
       'isDirect': serializer.toJson<bool>(isDirect),
       'hopCount': serializer.toJson<int>(hopCount),
       'lastTelemetryChannelIdx':
@@ -478,7 +452,7 @@ class ContactData extends DataClass implements Insertable<ContactData> {
     };
   }
 
-  ContactData copyWith(
+  NodeData copyWith(
           {Uint8List? publicKey,
           int? hash,
           Value<String?> name = const Value.absent(),
@@ -487,8 +461,7 @@ class ContactData extends DataClass implements Insertable<ContactData> {
           int? lastSeen,
           Value<int?> companionBatteryMilliVolts = const Value.absent(),
           Value<int?> phoneBatteryMilliVolts = const Value.absent(),
-          bool? isRepeater,
-          bool? isRoomServer,
+          NodeType? nodeType,
           bool? isDirect,
           int? hopCount,
           Value<int?> lastTelemetryChannelIdx = const Value.absent(),
@@ -496,7 +469,7 @@ class ContactData extends DataClass implements Insertable<ContactData> {
           bool? isOutOfRange,
           bool? isAutonomousDevice,
           Value<String?> companionDeviceKey = const Value.absent()}) =>
-      ContactData(
+      NodeData(
         publicKey: publicKey ?? this.publicKey,
         hash: hash ?? this.hash,
         name: name.present ? name.value : this.name,
@@ -509,8 +482,7 @@ class ContactData extends DataClass implements Insertable<ContactData> {
         phoneBatteryMilliVolts: phoneBatteryMilliVolts.present
             ? phoneBatteryMilliVolts.value
             : this.phoneBatteryMilliVolts,
-        isRepeater: isRepeater ?? this.isRepeater,
-        isRoomServer: isRoomServer ?? this.isRoomServer,
+        nodeType: nodeType ?? this.nodeType,
         isDirect: isDirect ?? this.isDirect,
         hopCount: hopCount ?? this.hopCount,
         lastTelemetryChannelIdx: lastTelemetryChannelIdx.present
@@ -525,8 +497,8 @@ class ContactData extends DataClass implements Insertable<ContactData> {
             ? companionDeviceKey.value
             : this.companionDeviceKey,
       );
-  ContactData copyWithCompanion(ContactsCompanion data) {
-    return ContactData(
+  NodeData copyWithCompanion(NodesCompanion data) {
+    return NodeData(
       publicKey: data.publicKey.present ? data.publicKey.value : this.publicKey,
       hash: data.hash.present ? data.hash.value : this.hash,
       name: data.name.present ? data.name.value : this.name,
@@ -539,11 +511,7 @@ class ContactData extends DataClass implements Insertable<ContactData> {
       phoneBatteryMilliVolts: data.phoneBatteryMilliVolts.present
           ? data.phoneBatteryMilliVolts.value
           : this.phoneBatteryMilliVolts,
-      isRepeater:
-          data.isRepeater.present ? data.isRepeater.value : this.isRepeater,
-      isRoomServer: data.isRoomServer.present
-          ? data.isRoomServer.value
-          : this.isRoomServer,
+      nodeType: data.nodeType.present ? data.nodeType.value : this.nodeType,
       isDirect: data.isDirect.present ? data.isDirect.value : this.isDirect,
       hopCount: data.hopCount.present ? data.hopCount.value : this.hopCount,
       lastTelemetryChannelIdx: data.lastTelemetryChannelIdx.present
@@ -566,7 +534,7 @@ class ContactData extends DataClass implements Insertable<ContactData> {
 
   @override
   String toString() {
-    return (StringBuffer('ContactData(')
+    return (StringBuffer('NodeData(')
           ..write('publicKey: $publicKey, ')
           ..write('hash: $hash, ')
           ..write('name: $name, ')
@@ -575,8 +543,7 @@ class ContactData extends DataClass implements Insertable<ContactData> {
           ..write('lastSeen: $lastSeen, ')
           ..write('companionBatteryMilliVolts: $companionBatteryMilliVolts, ')
           ..write('phoneBatteryMilliVolts: $phoneBatteryMilliVolts, ')
-          ..write('isRepeater: $isRepeater, ')
-          ..write('isRoomServer: $isRoomServer, ')
+          ..write('nodeType: $nodeType, ')
           ..write('isDirect: $isDirect, ')
           ..write('hopCount: $hopCount, ')
           ..write('lastTelemetryChannelIdx: $lastTelemetryChannelIdx, ')
@@ -598,8 +565,7 @@ class ContactData extends DataClass implements Insertable<ContactData> {
       lastSeen,
       companionBatteryMilliVolts,
       phoneBatteryMilliVolts,
-      isRepeater,
-      isRoomServer,
+      nodeType,
       isDirect,
       hopCount,
       lastTelemetryChannelIdx,
@@ -610,7 +576,7 @@ class ContactData extends DataClass implements Insertable<ContactData> {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is ContactData &&
+      (other is NodeData &&
           $driftBlobEquality.equals(other.publicKey, this.publicKey) &&
           other.hash == this.hash &&
           other.name == this.name &&
@@ -619,8 +585,7 @@ class ContactData extends DataClass implements Insertable<ContactData> {
           other.lastSeen == this.lastSeen &&
           other.companionBatteryMilliVolts == this.companionBatteryMilliVolts &&
           other.phoneBatteryMilliVolts == this.phoneBatteryMilliVolts &&
-          other.isRepeater == this.isRepeater &&
-          other.isRoomServer == this.isRoomServer &&
+          other.nodeType == this.nodeType &&
           other.isDirect == this.isDirect &&
           other.hopCount == this.hopCount &&
           other.lastTelemetryChannelIdx == this.lastTelemetryChannelIdx &&
@@ -630,7 +595,7 @@ class ContactData extends DataClass implements Insertable<ContactData> {
           other.companionDeviceKey == this.companionDeviceKey);
 }
 
-class ContactsCompanion extends UpdateCompanion<ContactData> {
+class NodesCompanion extends UpdateCompanion<NodeData> {
   final Value<Uint8List> publicKey;
   final Value<int> hash;
   final Value<String?> name;
@@ -639,8 +604,7 @@ class ContactsCompanion extends UpdateCompanion<ContactData> {
   final Value<int> lastSeen;
   final Value<int?> companionBatteryMilliVolts;
   final Value<int?> phoneBatteryMilliVolts;
-  final Value<bool> isRepeater;
-  final Value<bool> isRoomServer;
+  final Value<NodeType> nodeType;
   final Value<bool> isDirect;
   final Value<int> hopCount;
   final Value<int?> lastTelemetryChannelIdx;
@@ -649,7 +613,7 @@ class ContactsCompanion extends UpdateCompanion<ContactData> {
   final Value<bool> isAutonomousDevice;
   final Value<String?> companionDeviceKey;
   final Value<int> rowid;
-  const ContactsCompanion({
+  const NodesCompanion({
     this.publicKey = const Value.absent(),
     this.hash = const Value.absent(),
     this.name = const Value.absent(),
@@ -658,8 +622,7 @@ class ContactsCompanion extends UpdateCompanion<ContactData> {
     this.lastSeen = const Value.absent(),
     this.companionBatteryMilliVolts = const Value.absent(),
     this.phoneBatteryMilliVolts = const Value.absent(),
-    this.isRepeater = const Value.absent(),
-    this.isRoomServer = const Value.absent(),
+    this.nodeType = const Value.absent(),
     this.isDirect = const Value.absent(),
     this.hopCount = const Value.absent(),
     this.lastTelemetryChannelIdx = const Value.absent(),
@@ -669,7 +632,7 @@ class ContactsCompanion extends UpdateCompanion<ContactData> {
     this.companionDeviceKey = const Value.absent(),
     this.rowid = const Value.absent(),
   });
-  ContactsCompanion.insert({
+  NodesCompanion.insert({
     required Uint8List publicKey,
     required int hash,
     this.name = const Value.absent(),
@@ -678,8 +641,7 @@ class ContactsCompanion extends UpdateCompanion<ContactData> {
     required int lastSeen,
     this.companionBatteryMilliVolts = const Value.absent(),
     this.phoneBatteryMilliVolts = const Value.absent(),
-    this.isRepeater = const Value.absent(),
-    this.isRoomServer = const Value.absent(),
+    this.nodeType = const Value.absent(),
     this.isDirect = const Value.absent(),
     this.hopCount = const Value.absent(),
     this.lastTelemetryChannelIdx = const Value.absent(),
@@ -691,7 +653,7 @@ class ContactsCompanion extends UpdateCompanion<ContactData> {
   })  : publicKey = Value(publicKey),
         hash = Value(hash),
         lastSeen = Value(lastSeen);
-  static Insertable<ContactData> custom({
+  static Insertable<NodeData> custom({
     Expression<Uint8List>? publicKey,
     Expression<int>? hash,
     Expression<String>? name,
@@ -700,8 +662,7 @@ class ContactsCompanion extends UpdateCompanion<ContactData> {
     Expression<int>? lastSeen,
     Expression<int>? companionBatteryMilliVolts,
     Expression<int>? phoneBatteryMilliVolts,
-    Expression<bool>? isRepeater,
-    Expression<bool>? isRoomServer,
+    Expression<int>? nodeType,
     Expression<bool>? isDirect,
     Expression<int>? hopCount,
     Expression<int>? lastTelemetryChannelIdx,
@@ -722,8 +683,7 @@ class ContactsCompanion extends UpdateCompanion<ContactData> {
         'companion_battery_milli_volts': companionBatteryMilliVolts,
       if (phoneBatteryMilliVolts != null)
         'phone_battery_milli_volts': phoneBatteryMilliVolts,
-      if (isRepeater != null) 'is_repeater': isRepeater,
-      if (isRoomServer != null) 'is_room_server': isRoomServer,
+      if (nodeType != null) 'node_type': nodeType,
       if (isDirect != null) 'is_direct': isDirect,
       if (hopCount != null) 'hop_count': hopCount,
       if (lastTelemetryChannelIdx != null)
@@ -739,7 +699,7 @@ class ContactsCompanion extends UpdateCompanion<ContactData> {
     });
   }
 
-  ContactsCompanion copyWith(
+  NodesCompanion copyWith(
       {Value<Uint8List>? publicKey,
       Value<int>? hash,
       Value<String?>? name,
@@ -748,8 +708,7 @@ class ContactsCompanion extends UpdateCompanion<ContactData> {
       Value<int>? lastSeen,
       Value<int?>? companionBatteryMilliVolts,
       Value<int?>? phoneBatteryMilliVolts,
-      Value<bool>? isRepeater,
-      Value<bool>? isRoomServer,
+      Value<NodeType>? nodeType,
       Value<bool>? isDirect,
       Value<int>? hopCount,
       Value<int?>? lastTelemetryChannelIdx,
@@ -758,7 +717,7 @@ class ContactsCompanion extends UpdateCompanion<ContactData> {
       Value<bool>? isAutonomousDevice,
       Value<String?>? companionDeviceKey,
       Value<int>? rowid}) {
-    return ContactsCompanion(
+    return NodesCompanion(
       publicKey: publicKey ?? this.publicKey,
       hash: hash ?? this.hash,
       name: name ?? this.name,
@@ -769,8 +728,7 @@ class ContactsCompanion extends UpdateCompanion<ContactData> {
           companionBatteryMilliVolts ?? this.companionBatteryMilliVolts,
       phoneBatteryMilliVolts:
           phoneBatteryMilliVolts ?? this.phoneBatteryMilliVolts,
-      isRepeater: isRepeater ?? this.isRepeater,
-      isRoomServer: isRoomServer ?? this.isRoomServer,
+      nodeType: nodeType ?? this.nodeType,
       isDirect: isDirect ?? this.isDirect,
       hopCount: hopCount ?? this.hopCount,
       lastTelemetryChannelIdx:
@@ -813,11 +771,9 @@ class ContactsCompanion extends UpdateCompanion<ContactData> {
       map['phone_battery_milli_volts'] =
           Variable<int>(phoneBatteryMilliVolts.value);
     }
-    if (isRepeater.present) {
-      map['is_repeater'] = Variable<bool>(isRepeater.value);
-    }
-    if (isRoomServer.present) {
-      map['is_room_server'] = Variable<bool>(isRoomServer.value);
+    if (nodeType.present) {
+      map['node_type'] =
+          Variable<int>($NodesTable.$converternodeType.toSql(nodeType.value));
     }
     if (isDirect.present) {
       map['is_direct'] = Variable<bool>(isDirect.value);
@@ -850,7 +806,7 @@ class ContactsCompanion extends UpdateCompanion<ContactData> {
 
   @override
   String toString() {
-    return (StringBuffer('ContactsCompanion(')
+    return (StringBuffer('NodesCompanion(')
           ..write('publicKey: $publicKey, ')
           ..write('hash: $hash, ')
           ..write('name: $name, ')
@@ -859,8 +815,7 @@ class ContactsCompanion extends UpdateCompanion<ContactData> {
           ..write('lastSeen: $lastSeen, ')
           ..write('companionBatteryMilliVolts: $companionBatteryMilliVolts, ')
           ..write('phoneBatteryMilliVolts: $phoneBatteryMilliVolts, ')
-          ..write('isRepeater: $isRepeater, ')
-          ..write('isRoomServer: $isRoomServer, ')
+          ..write('nodeType: $nodeType, ')
           ..write('isDirect: $isDirect, ')
           ..write('hopCount: $hopCount, ')
           ..write('lastTelemetryChannelIdx: $lastTelemetryChannelIdx, ')
@@ -5776,7 +5731,7 @@ class ImportedOverlayMapsCompanion
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
-  late final $ContactsTable contacts = $ContactsTable(this);
+  late final $NodesTable nodes = $NodesTable(this);
   late final $ChannelsTable channels = $ChannelsTable(this);
   late final $MessagesTable messages = $MessagesTable(this);
   late final $WaypointsTable waypoints = $WaypointsTable(this);
@@ -5807,7 +5762,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
   List<DatabaseSchemaEntity> get allSchemaEntities => [
-        contacts,
+        nodes,
         channels,
         messages,
         waypoints,
@@ -5820,7 +5775,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       ];
 }
 
-typedef $$ContactsTableCreateCompanionBuilder = ContactsCompanion Function({
+typedef $$NodesTableCreateCompanionBuilder = NodesCompanion Function({
   required Uint8List publicKey,
   required int hash,
   Value<String?> name,
@@ -5829,8 +5784,7 @@ typedef $$ContactsTableCreateCompanionBuilder = ContactsCompanion Function({
   required int lastSeen,
   Value<int?> companionBatteryMilliVolts,
   Value<int?> phoneBatteryMilliVolts,
-  Value<bool> isRepeater,
-  Value<bool> isRoomServer,
+  Value<NodeType> nodeType,
   Value<bool> isDirect,
   Value<int> hopCount,
   Value<int?> lastTelemetryChannelIdx,
@@ -5840,7 +5794,7 @@ typedef $$ContactsTableCreateCompanionBuilder = ContactsCompanion Function({
   Value<String?> companionDeviceKey,
   Value<int> rowid,
 });
-typedef $$ContactsTableUpdateCompanionBuilder = ContactsCompanion Function({
+typedef $$NodesTableUpdateCompanionBuilder = NodesCompanion Function({
   Value<Uint8List> publicKey,
   Value<int> hash,
   Value<String?> name,
@@ -5849,8 +5803,7 @@ typedef $$ContactsTableUpdateCompanionBuilder = ContactsCompanion Function({
   Value<int> lastSeen,
   Value<int?> companionBatteryMilliVolts,
   Value<int?> phoneBatteryMilliVolts,
-  Value<bool> isRepeater,
-  Value<bool> isRoomServer,
+  Value<NodeType> nodeType,
   Value<bool> isDirect,
   Value<int> hopCount,
   Value<int?> lastTelemetryChannelIdx,
@@ -5861,9 +5814,8 @@ typedef $$ContactsTableUpdateCompanionBuilder = ContactsCompanion Function({
   Value<int> rowid,
 });
 
-class $$ContactsTableFilterComposer
-    extends Composer<_$AppDatabase, $ContactsTable> {
-  $$ContactsTableFilterComposer({
+class $$NodesTableFilterComposer extends Composer<_$AppDatabase, $NodesTable> {
+  $$NodesTableFilterComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -5896,11 +5848,10 @@ class $$ContactsTableFilterComposer
       column: $table.phoneBatteryMilliVolts,
       builder: (column) => ColumnFilters(column));
 
-  ColumnFilters<bool> get isRepeater => $composableBuilder(
-      column: $table.isRepeater, builder: (column) => ColumnFilters(column));
-
-  ColumnFilters<bool> get isRoomServer => $composableBuilder(
-      column: $table.isRoomServer, builder: (column) => ColumnFilters(column));
+  ColumnWithTypeConverterFilters<NodeType, NodeType, int> get nodeType =>
+      $composableBuilder(
+          column: $table.nodeType,
+          builder: (column) => ColumnWithTypeConverterFilters(column));
 
   ColumnFilters<bool> get isDirect => $composableBuilder(
       column: $table.isDirect, builder: (column) => ColumnFilters(column));
@@ -5928,9 +5879,9 @@ class $$ContactsTableFilterComposer
       builder: (column) => ColumnFilters(column));
 }
 
-class $$ContactsTableOrderingComposer
-    extends Composer<_$AppDatabase, $ContactsTable> {
-  $$ContactsTableOrderingComposer({
+class $$NodesTableOrderingComposer
+    extends Composer<_$AppDatabase, $NodesTable> {
+  $$NodesTableOrderingComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -5963,12 +5914,8 @@ class $$ContactsTableOrderingComposer
       column: $table.phoneBatteryMilliVolts,
       builder: (column) => ColumnOrderings(column));
 
-  ColumnOrderings<bool> get isRepeater => $composableBuilder(
-      column: $table.isRepeater, builder: (column) => ColumnOrderings(column));
-
-  ColumnOrderings<bool> get isRoomServer => $composableBuilder(
-      column: $table.isRoomServer,
-      builder: (column) => ColumnOrderings(column));
+  ColumnOrderings<int> get nodeType => $composableBuilder(
+      column: $table.nodeType, builder: (column) => ColumnOrderings(column));
 
   ColumnOrderings<bool> get isDirect => $composableBuilder(
       column: $table.isDirect, builder: (column) => ColumnOrderings(column));
@@ -5997,9 +5944,9 @@ class $$ContactsTableOrderingComposer
       builder: (column) => ColumnOrderings(column));
 }
 
-class $$ContactsTableAnnotationComposer
-    extends Composer<_$AppDatabase, $ContactsTable> {
-  $$ContactsTableAnnotationComposer({
+class $$NodesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $NodesTable> {
+  $$NodesTableAnnotationComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -6030,11 +5977,8 @@ class $$ContactsTableAnnotationComposer
   GeneratedColumn<int> get phoneBatteryMilliVolts => $composableBuilder(
       column: $table.phoneBatteryMilliVolts, builder: (column) => column);
 
-  GeneratedColumn<bool> get isRepeater => $composableBuilder(
-      column: $table.isRepeater, builder: (column) => column);
-
-  GeneratedColumn<bool> get isRoomServer => $composableBuilder(
-      column: $table.isRoomServer, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<NodeType, int> get nodeType =>
+      $composableBuilder(column: $table.nodeType, builder: (column) => column);
 
   GeneratedColumn<bool> get isDirect =>
       $composableBuilder(column: $table.isDirect, builder: (column) => column);
@@ -6058,28 +6002,28 @@ class $$ContactsTableAnnotationComposer
       column: $table.companionDeviceKey, builder: (column) => column);
 }
 
-class $$ContactsTableTableManager extends RootTableManager<
+class $$NodesTableTableManager extends RootTableManager<
     _$AppDatabase,
-    $ContactsTable,
-    ContactData,
-    $$ContactsTableFilterComposer,
-    $$ContactsTableOrderingComposer,
-    $$ContactsTableAnnotationComposer,
-    $$ContactsTableCreateCompanionBuilder,
-    $$ContactsTableUpdateCompanionBuilder,
-    (ContactData, BaseReferences<_$AppDatabase, $ContactsTable, ContactData>),
-    ContactData,
+    $NodesTable,
+    NodeData,
+    $$NodesTableFilterComposer,
+    $$NodesTableOrderingComposer,
+    $$NodesTableAnnotationComposer,
+    $$NodesTableCreateCompanionBuilder,
+    $$NodesTableUpdateCompanionBuilder,
+    (NodeData, BaseReferences<_$AppDatabase, $NodesTable, NodeData>),
+    NodeData,
     PrefetchHooks Function()> {
-  $$ContactsTableTableManager(_$AppDatabase db, $ContactsTable table)
+  $$NodesTableTableManager(_$AppDatabase db, $NodesTable table)
       : super(TableManagerState(
           db: db,
           table: table,
           createFilteringComposer: () =>
-              $$ContactsTableFilterComposer($db: db, $table: table),
+              $$NodesTableFilterComposer($db: db, $table: table),
           createOrderingComposer: () =>
-              $$ContactsTableOrderingComposer($db: db, $table: table),
+              $$NodesTableOrderingComposer($db: db, $table: table),
           createComputedFieldComposer: () =>
-              $$ContactsTableAnnotationComposer($db: db, $table: table),
+              $$NodesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback: ({
             Value<Uint8List> publicKey = const Value.absent(),
             Value<int> hash = const Value.absent(),
@@ -6089,8 +6033,7 @@ class $$ContactsTableTableManager extends RootTableManager<
             Value<int> lastSeen = const Value.absent(),
             Value<int?> companionBatteryMilliVolts = const Value.absent(),
             Value<int?> phoneBatteryMilliVolts = const Value.absent(),
-            Value<bool> isRepeater = const Value.absent(),
-            Value<bool> isRoomServer = const Value.absent(),
+            Value<NodeType> nodeType = const Value.absent(),
             Value<bool> isDirect = const Value.absent(),
             Value<int> hopCount = const Value.absent(),
             Value<int?> lastTelemetryChannelIdx = const Value.absent(),
@@ -6100,7 +6043,7 @@ class $$ContactsTableTableManager extends RootTableManager<
             Value<String?> companionDeviceKey = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
-              ContactsCompanion(
+              NodesCompanion(
             publicKey: publicKey,
             hash: hash,
             name: name,
@@ -6109,8 +6052,7 @@ class $$ContactsTableTableManager extends RootTableManager<
             lastSeen: lastSeen,
             companionBatteryMilliVolts: companionBatteryMilliVolts,
             phoneBatteryMilliVolts: phoneBatteryMilliVolts,
-            isRepeater: isRepeater,
-            isRoomServer: isRoomServer,
+            nodeType: nodeType,
             isDirect: isDirect,
             hopCount: hopCount,
             lastTelemetryChannelIdx: lastTelemetryChannelIdx,
@@ -6129,8 +6071,7 @@ class $$ContactsTableTableManager extends RootTableManager<
             required int lastSeen,
             Value<int?> companionBatteryMilliVolts = const Value.absent(),
             Value<int?> phoneBatteryMilliVolts = const Value.absent(),
-            Value<bool> isRepeater = const Value.absent(),
-            Value<bool> isRoomServer = const Value.absent(),
+            Value<NodeType> nodeType = const Value.absent(),
             Value<bool> isDirect = const Value.absent(),
             Value<int> hopCount = const Value.absent(),
             Value<int?> lastTelemetryChannelIdx = const Value.absent(),
@@ -6140,7 +6081,7 @@ class $$ContactsTableTableManager extends RootTableManager<
             Value<String?> companionDeviceKey = const Value.absent(),
             Value<int> rowid = const Value.absent(),
           }) =>
-              ContactsCompanion.insert(
+              NodesCompanion.insert(
             publicKey: publicKey,
             hash: hash,
             name: name,
@@ -6149,8 +6090,7 @@ class $$ContactsTableTableManager extends RootTableManager<
             lastSeen: lastSeen,
             companionBatteryMilliVolts: companionBatteryMilliVolts,
             phoneBatteryMilliVolts: phoneBatteryMilliVolts,
-            isRepeater: isRepeater,
-            isRoomServer: isRoomServer,
+            nodeType: nodeType,
             isDirect: isDirect,
             hopCount: hopCount,
             lastTelemetryChannelIdx: lastTelemetryChannelIdx,
@@ -6167,17 +6107,17 @@ class $$ContactsTableTableManager extends RootTableManager<
         ));
 }
 
-typedef $$ContactsTableProcessedTableManager = ProcessedTableManager<
+typedef $$NodesTableProcessedTableManager = ProcessedTableManager<
     _$AppDatabase,
-    $ContactsTable,
-    ContactData,
-    $$ContactsTableFilterComposer,
-    $$ContactsTableOrderingComposer,
-    $$ContactsTableAnnotationComposer,
-    $$ContactsTableCreateCompanionBuilder,
-    $$ContactsTableUpdateCompanionBuilder,
-    (ContactData, BaseReferences<_$AppDatabase, $ContactsTable, ContactData>),
-    ContactData,
+    $NodesTable,
+    NodeData,
+    $$NodesTableFilterComposer,
+    $$NodesTableOrderingComposer,
+    $$NodesTableAnnotationComposer,
+    $$NodesTableCreateCompanionBuilder,
+    $$NodesTableUpdateCompanionBuilder,
+    (NodeData, BaseReferences<_$AppDatabase, $NodesTable, NodeData>),
+    NodeData,
     PrefetchHooks Function()>;
 typedef $$ChannelsTableCreateCompanionBuilder = ChannelsCompanion Function({
   Value<int> hash,
@@ -8491,8 +8431,8 @@ typedef $$ImportedOverlayMapsTableProcessedTableManager = ProcessedTableManager<
 class $AppDatabaseManager {
   final _$AppDatabase _db;
   $AppDatabaseManager(this._db);
-  $$ContactsTableTableManager get contacts =>
-      $$ContactsTableTableManager(_db, _db.contacts);
+  $$NodesTableTableManager get nodes =>
+      $$NodesTableTableManager(_db, _db.nodes);
   $$ChannelsTableTableManager get channels =>
       $$ChannelsTableTableManager(_db, _db.channels);
   $$MessagesTableTableManager get messages =>

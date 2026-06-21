@@ -15,6 +15,7 @@ import 'package:meshcore_team/ble/ble_constants.dart';
 import 'package:meshcore_team/ble/ble_responses.dart';
 import 'package:meshcore_team/ble/ble_service.dart';
 import 'package:meshcore_team/database/database.dart';
+import 'package:meshcore_team/database/tables.dart' show NodeType;
 import 'package:meshcore_team/database/daos/messages_dao.dart';
 import 'package:meshcore_team/database/daos/channels_dao.dart';
 import 'package:meshcore_team/database/daos/contacts_dao.dart';
@@ -1323,7 +1324,7 @@ class MessageRepository {
 
     final updatedName = senderName;
 
-    final updated = ContactsCompanion(
+    final updated = NodesCompanion(
       publicKey: drift.Value(contact.publicKey),
       hash: drift.Value(contact.hash),
       name: drift.Value(updatedName),
@@ -1641,7 +1642,7 @@ class MessageRepository {
       if (companionKey != null && companionKey.isNotEmpty) {
         final contact = await _contactsDao.getContactByHashForCompanion(
             recipientHash, companionKey);
-        if (contact != null && contact.isRepeater) {
+        if (contact != null && contact.nodeType == NodeType.repeater) {
           debugPrint(
               '[MessageRepository] 🚫 Blocked DM to repeater contact (hash: $recipientHash)');
           return null;
@@ -1970,7 +1971,7 @@ class MessageRepository {
     ));
 
     // DB update — same contact fields as #TEL: handler.
-    final updated = ContactsCompanion(
+    final updated = NodesCompanion(
       publicKey: drift.Value(contact.publicKey),
       hash: drift.Value(contact.hash),
       name: drift.Value(senderName),

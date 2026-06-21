@@ -15,14 +15,14 @@ part 'contacts_dao.g.dart';
 
 /// DAO for managing mesh network contacts (nodes)
 /// Matches Android NodeDao functionality
-@DriftAccessor(tables: [Contacts, Messages])
+@DriftAccessor(tables: [Nodes, Messages])
 class ContactsDao extends DatabaseAccessor<AppDatabase>
     with _$ContactsDaoMixin {
   ContactsDao(super.db);
 
   /// Get all contacts ordered by last seen (most recent first)
-  Future<List<ContactData>> getAllContacts() {
-    return (select(contacts)
+  Future<List<NodeData>> getAllContacts() {
+    return (select(nodes)
           ..orderBy([
             (t) =>
                 OrderingTerm(expression: t.lastSeen, mode: OrderingMode.desc),
@@ -31,8 +31,8 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
   }
 
   /// Get contacts for a specific companion device
-  Future<List<ContactData>> getContactsByCompanion(String companionKey) {
-    return (select(contacts)
+  Future<List<NodeData>> getContactsByCompanion(String companionKey) {
+    return (select(nodes)
           ..where((t) => t.companionDeviceKey.equals(companionKey))
           ..orderBy([
             (t) =>
@@ -42,8 +42,8 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
   }
 
   /// Get a single contact by public key
-  Future<ContactData?> getContactByPublicKey(Uint8List publicKey) {
-    return (select(contacts)..where((t) => t.publicKey.equals(publicKey)))
+  Future<NodeData?> getContactByPublicKey(Uint8List publicKey) {
+    return (select(nodes)..where((t) => t.publicKey.equals(publicKey)))
         .getSingleOrNull();
   }
 
@@ -52,7 +52,7 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
   ///
   /// This is required for direct-message formats that only include a 6-byte
   /// public key prefix.
-  Future<ContactData?> getContactByPublicKeyPrefix(
+  Future<NodeData?> getContactByPublicKeyPrefix(
     Uint8List prefix, {
     int prefixLength = 6,
     String? companionKey,
@@ -63,7 +63,7 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
     final effectivePrefixLength =
         prefixLength > prefix.length ? prefix.length : prefixLength;
 
-    final query = select(contacts);
+    final query = select(nodes);
     if (companionKey != null && companionKey.isNotEmpty) {
       query.where((t) => t.companionDeviceKey.equals(companionKey));
     }
@@ -91,8 +91,8 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
 
   /// Get a single contact by hash (derived from full public key)
   /// Returns first match if multiple contacts have same hash
-  Future<ContactData?> getContactByHash(int hash) {
-    return (select(contacts)
+  Future<NodeData?> getContactByHash(int hash) {
+    return (select(nodes)
           ..where((t) => t.hash.equals(hash))
           ..orderBy([
             (t) =>
@@ -104,9 +104,9 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
 
   /// Get a single contact by hash for a specific companion.
   /// Prefer this over getContactByHash() when companion context is available.
-  Future<ContactData?> getContactByHashForCompanion(
+  Future<NodeData?> getContactByHashForCompanion(
       int hash, String companionKey) {
-    return (select(contacts)
+    return (select(nodes)
           ..where((t) =>
               t.hash.equals(hash) & t.companionDeviceKey.equals(companionKey))
           ..orderBy([
@@ -118,26 +118,26 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
   }
 
   /// Insert or update a contact
-  Future<int> upsertContact(ContactsCompanion contact) async {
-    return await into(contacts).insertOnConflictUpdate(contact);
+  Future<int> upsertContact(NodesCompanion contact) async {
+    return await into(nodes).insertOnConflictUpdate(contact);
   }
 
   /// Insert or update a batch of contacts inside a single transaction.
   /// Much faster than calling upsertContact() in a loop because SQLite
   /// commits only once instead of N times.
-  Future<void> bulkUpsertContacts(List<ContactsCompanion> rows) async {
+  Future<void> bulkUpsertContacts(List<NodesCompanion> rows) async {
     if (rows.isEmpty) return;
     await transaction(() async {
       for (final row in rows) {
-        await into(contacts).insertOnConflictUpdate(row);
+        await into(nodes).insertOnConflictUpdate(row);
       }
     });
   }
 
   /// Update contact's last seen timestamp
   Future<void> updateLastSeen(Uint8List publicKey, int timestamp) {
-    return (update(contacts)..where((t) => t.publicKey.equals(publicKey)))
-        .write(ContactsCompanion(
+    return (update(nodes)..where((t) => t.publicKey.equals(publicKey)))
+        .write(NodesCompanion(
       lastSeen: Value(timestamp),
     ));
   }
@@ -148,8 +148,8 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
     double latitude,
     double longitude,
   ) {
-    return (update(contacts)..where((t) => t.publicKey.equals(publicKey)))
-        .write(ContactsCompanion(
+    return (update(nodes)..where((t) => t.publicKey.equals(publicKey)))
+        .write(NodesCompanion(
       latitude: Value(latitude),
       longitude: Value(longitude),
     ));
@@ -161,8 +161,8 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
     int hopCount,
     bool isDirect,
   ) {
-    return (update(contacts)..where((t) => t.publicKey.equals(publicKey)))
-        .write(ContactsCompanion(
+    return (update(nodes)..where((t) => t.publicKey.equals(publicKey)))
+        .write(NodesCompanion(
       hopCount: Value(hopCount),
       isDirect: Value(isDirect),
     ));
@@ -170,8 +170,8 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
 
   /// Mark contact as out of range (for adaptive forwarding)
   Future<void> markOutOfRange(Uint8List publicKey, bool isOutOfRange) {
-    return (update(contacts)..where((t) => t.publicKey.equals(publicKey)))
-        .write(ContactsCompanion(
+    return (update(nodes)..where((t) => t.publicKey.equals(publicKey)))
+        .write(NodesCompanion(
       isOutOfRange: Value(isOutOfRange),
     ));
   }
@@ -182,8 +182,8 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
     int? companionBattery,
     int? phoneBattery,
   }) {
-    return (update(contacts)..where((t) => t.publicKey.equals(publicKey)))
-        .write(ContactsCompanion(
+    return (update(nodes)..where((t) => t.publicKey.equals(publicKey)))
+        .write(NodesCompanion(
       companionBatteryMilliVolts: companionBattery != null
           ? Value(companionBattery)
           : const Value.absent(),
@@ -198,8 +198,8 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
     int channelIdx,
     int timestamp,
   ) {
-    return (update(contacts)..where((t) => t.publicKey.equals(publicKey)))
-        .write(ContactsCompanion(
+    return (update(nodes)..where((t) => t.publicKey.equals(publicKey)))
+        .write(NodesCompanion(
       lastTelemetryChannelIdx: Value(channelIdx),
       lastTelemetryTimestamp: Value(timestamp),
     ));
@@ -207,19 +207,19 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
 
   /// Delete a contact
   Future<int> deleteContact(Uint8List publicKey) {
-    return (delete(contacts)..where((t) => t.publicKey.equals(publicKey))).go();
+    return (delete(nodes)..where((t) => t.publicKey.equals(publicKey))).go();
   }
 
   /// Delete all contacts for a companion device
   Future<int> deleteContactsByCompanion(String companionKey) {
-    return (delete(contacts)
+    return (delete(nodes)
           ..where((t) => t.companionDeviceKey.equals(companionKey)))
         .go();
   }
 
   /// Watch all contacts (stream)
-  Stream<List<ContactData>> watchAllContacts() {
-    return (select(contacts)
+  Stream<List<NodeData>> watchAllContacts() {
+    return (select(nodes)
           ..orderBy([
             (t) =>
                 OrderingTerm(expression: t.lastSeen, mode: OrderingMode.desc),
@@ -228,8 +228,8 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
   }
 
   /// Watch contacts for a specific companion (stream)
-  Stream<List<ContactData>> watchContactsByCompanion(String companionKey) {
-    return (select(contacts)
+  Stream<List<NodeData>> watchContactsByCompanion(String companionKey) {
+    return (select(nodes)
           ..where((t) => t.companionDeviceKey.equals(companionKey))
           ..orderBy([
             (t) =>
@@ -239,16 +239,16 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
   }
 
   /// Watch a single contact by public key (stream)
-  Stream<ContactData?> watchContact(Uint8List publicKey) {
-    return (select(contacts)..where((t) => t.publicKey.equals(publicKey)))
+  Stream<NodeData?> watchContact(Uint8List publicKey) {
+    return (select(nodes)..where((t) => t.publicKey.equals(publicKey)))
         .watchSingleOrNull();
   }
 
   /// Get contacts that are currently in range (not stale)
-  Future<List<ContactData>> getActiveContacts(
+  Future<List<NodeData>> getActiveContacts(
       {int staleThresholdMs = 5 * 60 * 1000}) {
     final cutoffTime = DateTime.now().millisecondsSinceEpoch - staleThresholdMs;
-    return (select(contacts)
+    return (select(nodes)
           ..where((t) => t.lastSeen.isBiggerOrEqualValue(cutoffTime))
           ..orderBy([
             (t) =>
@@ -258,8 +258,8 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
   }
 
   /// Get contacts marked as out of range
-  Future<List<ContactData>> getOutOfRangeContacts() {
-    return (select(contacts)
+  Future<List<NodeData>> getOutOfRangeContacts() {
+    return (select(nodes)
           ..where((t) => t.isOutOfRange.equals(true))
           ..orderBy([
             (t) =>
@@ -272,7 +272,7 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
   Future<List<ContactWithUnread>> getAllContactsWithUnread() async {
     final allContacts = await getAllContacts();
     final contactsWithStats =
-        <({ContactData contact, int unreadCount, int messageCount})>[];
+        <({NodeData contact, int unreadCount, int messageCount})>[];
 
     for (final contact in allContacts) {
       final unreadCount =
@@ -291,8 +291,10 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
     // 2) Within each group: unread first, then any-message history, then the rest.
     // 3) Within subgroups: higher unreadCount first, then lastSeen.
     contactsWithStats.sort((a, b) {
-      if (a.contact.isRepeater != b.contact.isRepeater) {
-        return a.contact.isRepeater ? 1 : -1;
+      final aIsRepeater = a.contact.nodeType == NodeType.repeater;
+      final bIsRepeater = b.contact.nodeType == NodeType.repeater;
+      if (aIsRepeater != bIsRepeater) {
+        return aIsRepeater ? 1 : -1;
       }
 
       final aHasUnread = a.unreadCount > 0;
@@ -349,7 +351,7 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
         final messageCounts =
             await db.messagesDao.getMessageCountsForContacts();
         final contactsWithStats =
-            <({ContactData contact, int unreadCount, int messageCount})>[];
+            <({NodeData contact, int unreadCount, int messageCount})>[];
 
         for (final contact in contactsList) {
           contactsWithStats.add((
@@ -360,8 +362,10 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
         }
 
         contactsWithStats.sort((a, b) {
-          if (a.contact.isRepeater != b.contact.isRepeater) {
-            return a.contact.isRepeater ? 1 : -1;
+          final aIsRepeater = a.contact.nodeType == NodeType.repeater;
+          final bIsRepeater = b.contact.nodeType == NodeType.repeater;
+          if (aIsRepeater != bIsRepeater) {
+            return aIsRepeater ? 1 : -1;
           }
 
           final aHasUnread = a.unreadCount > 0;
@@ -424,7 +428,7 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
         final messageCounts = await db.messagesDao
             .getMessageCountsForContactsByCompanion(companionKey);
         final contactsWithStats =
-            <({ContactData contact, int unreadCount, int messageCount})>[];
+            <({NodeData contact, int unreadCount, int messageCount})>[];
 
         for (final contact in contactsList) {
           contactsWithStats.add((
@@ -435,8 +439,10 @@ class ContactsDao extends DatabaseAccessor<AppDatabase>
         }
 
         contactsWithStats.sort((a, b) {
-          if (a.contact.isRepeater != b.contact.isRepeater) {
-            return a.contact.isRepeater ? 1 : -1;
+          final aIsRepeater = a.contact.nodeType == NodeType.repeater;
+          final bIsRepeater = b.contact.nodeType == NodeType.repeater;
+          if (aIsRepeater != bIsRepeater) {
+            return aIsRepeater ? 1 : -1;
           }
 
           final aHasUnread = a.unreadCount > 0;

@@ -4,6 +4,7 @@
 import 'dart:typed_data';
 import 'package:drift/drift.dart';
 import 'package:meshcore_team/database/database.dart';
+import 'package:meshcore_team/database/tables.dart' show NodeType;
 import 'package:latlong2/latlong.dart';
 
 /// Contact model representing a mesh network node
@@ -17,8 +18,7 @@ class Contact {
   final int lastSeen;
   final int? companionBatteryMilliVolts;
   final int? phoneBatteryMilliVolts;
-  final bool isRepeater;
-  final bool isRoomServer;
+  final NodeType nodeType;
   final bool isDirect;
   final int hopCount;
   final int? lastTelemetryChannelIdx;
@@ -35,8 +35,7 @@ class Contact {
     required this.lastSeen,
     this.companionBatteryMilliVolts,
     this.phoneBatteryMilliVolts,
-    required this.isRepeater,
-    required this.isRoomServer,
+    required this.nodeType,
     required this.isDirect,
     required this.hopCount,
     this.lastTelemetryChannelIdx,
@@ -45,7 +44,10 @@ class Contact {
     this.companionDeviceKey,
   });
 
-  /// Create Contact from database ContactData
+  bool get isRepeater => nodeType == NodeType.repeater;
+  bool get isRoomServer => nodeType == NodeType.room;
+
+  /// Create Contact from database NodeData
   factory Contact.fromData(ContactData data) {
     return Contact(
       publicKey: data.publicKey,
@@ -56,8 +58,7 @@ class Contact {
       lastSeen: data.lastSeen,
       companionBatteryMilliVolts: data.companionBatteryMilliVolts,
       phoneBatteryMilliVolts: data.phoneBatteryMilliVolts,
-      isRepeater: data.isRepeater,
-      isRoomServer: data.isRoomServer,
+      nodeType: data.nodeType,
       isDirect: data.isDirect,
       hopCount: data.hopCount,
       lastTelemetryChannelIdx: data.lastTelemetryChannelIdx,
@@ -67,9 +68,9 @@ class Contact {
     );
   }
 
-  /// Convert to ContactsCompanion for database insertion
-  ContactsCompanion toCompanion() {
-    return ContactsCompanion.insert(
+  /// Convert to NodesCompanion for database insertion
+  NodesCompanion toCompanion() {
+    return NodesCompanion.insert(
       publicKey: publicKey,
       hash: hash,
       name: name != null ? Value(name) : const Value.absent(),
@@ -82,8 +83,7 @@ class Contact {
       phoneBatteryMilliVolts: phoneBatteryMilliVolts != null
           ? Value(phoneBatteryMilliVolts)
           : const Value.absent(),
-      isRepeater: Value(isRepeater),
-      isRoomServer: Value(isRoomServer),
+      nodeType: Value(nodeType),
       isDirect: Value(isDirect),
       hopCount: Value(hopCount),
       lastTelemetryChannelIdx: lastTelemetryChannelIdx != null
@@ -176,8 +176,7 @@ class Contact {
     int? lastSeen,
     int? companionBatteryMilliVolts,
     int? phoneBatteryMilliVolts,
-    bool? isRepeater,
-    bool? isRoomServer,
+    NodeType? nodeType,
     bool? isDirect,
     int? hopCount,
     int? lastTelemetryChannelIdx,
@@ -196,8 +195,7 @@ class Contact {
           companionBatteryMilliVolts ?? this.companionBatteryMilliVolts,
       phoneBatteryMilliVolts:
           phoneBatteryMilliVolts ?? this.phoneBatteryMilliVolts,
-      isRepeater: isRepeater ?? this.isRepeater,
-      isRoomServer: isRoomServer ?? this.isRoomServer,
+      nodeType: nodeType ?? this.nodeType,
       isDirect: isDirect ?? this.isDirect,
       hopCount: hopCount ?? this.hopCount,
       lastTelemetryChannelIdx:

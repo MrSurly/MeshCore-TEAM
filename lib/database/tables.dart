@@ -7,10 +7,21 @@
 
 import 'package:drift/drift.dart';
 
-/// Contacts table - stores mesh network nodes/contacts
-/// Matches Android NodeEntity
-@DataClassName('ContactData')
-class Contacts extends Table {
+/// Over-the-wire advertisement type values from firmware AdvertDataHelpers.h.
+/// The integer index of each value matches the ADV_TYPE_* constant exactly.
+enum NodeType {
+  none,     // 0 = ADV_TYPE_NONE
+  chat,     // 1 = ADV_TYPE_CHAT (Companion/Client)
+  repeater, // 2 = ADV_TYPE_REPEATER
+  room,     // 3 = ADV_TYPE_ROOM (Room Server)
+  sensor,   // 4 = ADV_TYPE_SENSOR
+}
+
+/// Nodes table - stores mesh network nodes/contacts.
+/// Replaces the legacy `contacts` table (schema version 8 and earlier).
+/// Migration from `contacts` runs automatically on first open after upgrade.
+@DataClassName('NodeData')
+class Nodes extends Table {
   BlobColumn get publicKey => blob()(); // 32-byte public key (primary key)
   IntColumn get hash => integer()(); // Hash derived from full public key
   TextColumn get name => text().nullable()();
@@ -21,8 +32,8 @@ class Contacts extends Table {
       integer().nullable()(); // Companion radio battery
   IntColumn get phoneBatteryMilliVolts =>
       integer().nullable()(); // Phone battery
-  BoolColumn get isRepeater => boolean().withDefault(const Constant(false))();
-  BoolColumn get isRoomServer => boolean().withDefault(const Constant(false))();
+  IntColumn get nodeType =>
+      intEnum<NodeType>().withDefault(const Constant(1))(); // ADV_TYPE_*
   BoolColumn get isDirect =>
       boolean().withDefault(const Constant(false))(); // True if 0 hops
   IntColumn get hopCount => integer()
